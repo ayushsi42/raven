@@ -1,0 +1,36 @@
+[project]
+name = "hypothesis-agent"
+version = "0.1.0"
+description = "Core services for the RAVEN hypothesis validation workflow."
+license = {text = "Proprietary"}
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.111,<0.112",
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.2,<3",
+    "sqlalchemy[asyncio]>=2.0,<3",
+    "aiosqlite>=0.19,<1",
+    "uvicorn[standard]>=0.30,<0.31"
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.27,<0.28",
+    "pytest>=8.0,<9",
+    "pytest-asyncio>=0.23,<0.24",
+    "ruff>=0.5,<0.6"
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
