@@ -9,7 +9,10 @@ from hypothesis_agent.repositories.hypothesis_repository import (
     HypothesisRecord,
     HypothesisRepository,
 )
-from hypothesis_agent.workflows.hypothesis_workflow import HypothesisWorkflowClient
+from hypothesis_agent.workflows.hypothesis_workflow import (
+    HypothesisWorkflowClient,
+    WorkflowSubmissionResult,
+)
 
 
 @dataclass(slots=True)
@@ -23,16 +26,20 @@ class HypothesisService:
         """Submit a hypothesis, persist it, and return the response contract."""
 
         hypothesis_id = uuid4()
-        validation = await self.workflow_client.submit(hypothesis)
+        submission: WorkflowSubmissionResult = await self.workflow_client.submit(hypothesis_id, hypothesis)
         record = HypothesisRecord(
             hypothesis_id=hypothesis_id,
+            workflow_id=submission.workflow_id,
+            workflow_run_id=submission.workflow_run_id,
             request=hypothesis,
             status="accepted",
-            validation=validation,
+            validation=submission.validation,
         )
         await self.repository.save(record)
         return HypothesisResponse(
             hypothesis_id=hypothesis_id,
+            workflow_id=submission.workflow_id,
+            workflow_run_id=submission.workflow_run_id,
             status=record.status,
             validation=record.validation,
         )
@@ -45,6 +52,8 @@ class HypothesisService:
             raise KeyError(f"Hypothesis {hypothesis_id} not found")
         return HypothesisResponse(
             hypothesis_id=record.hypothesis_id,
+            workflow_id=record.workflow_id,
+            workflow_run_id=record.workflow_run_id,
             status=record.status,
             validation=record.validation,
         )

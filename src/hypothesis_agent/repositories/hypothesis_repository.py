@@ -17,6 +17,8 @@ class HypothesisRecord:
     """Stored representation of a hypothesis submission."""
 
     hypothesis_id: UUID
+    workflow_id: str
+    workflow_run_id: str
     request: HypothesisRequest
     status: str
     validation: ValidationSummary
@@ -60,6 +62,8 @@ class SqlAlchemyHypothesisRepository(HypothesisRepository):
                     payload=record.request.model_dump(),
                     status=record.status,
                     validation=record.validation.model_dump(),
+                    workflow_id=record.workflow_id,
+                    workflow_run_id=record.workflow_run_id,
                 )
             )
             await session.commit()
@@ -73,6 +77,8 @@ class SqlAlchemyHypothesisRepository(HypothesisRepository):
                 return None
             return HypothesisRecord(
                 hypothesis_id=hypothesis_id,
+                workflow_id=row.workflow_id,
+                workflow_run_id=row.workflow_run_id,
                 request=HypothesisRequest.model_validate(row.payload),
                 status=row.status,
                 validation=ValidationSummary.model_validate(row.validation),

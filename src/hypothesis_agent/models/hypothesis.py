@@ -55,5 +55,7 @@ class HypothesisResponse(BaseModel):
     """Outbound contract returned to the client after submission."""
 
     hypothesis_id: UUID = Field(default_factory=uuid4, description="Server-assigned hypothesis identifier.")
+    workflow_id: str = Field(..., description="Temporal workflow identifier handling the validation.")
+    workflow_run_id: str = Field(..., description="Temporal run identifier for tracking retries and history.")
     status: str = Field(..., description="Submission status for the hypothesis workflow.")
     validation: ValidationSummary = Field(..., description="Summary of the validation state.")

@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from hypothesis_agent.api.router import api_router
 from hypothesis_agent.config import AppSettings, get_settings
+from hypothesis_agent.db.migrations import upgrade_database
 from hypothesis_agent.db.session import Database
 from hypothesis_agent.logging import configure_logging
 from hypothesis_agent.repositories.hypothesis_repository import SqlAlchemyHypothesisRepository
@@ -30,6 +31,8 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     workflow_client = HypothesisWorkflowClient(
         namespace=app_settings.temporal_namespace,
         task_queue=app_settings.temporal_task_queue,
+        workflow=app_settings.temporal_workflow,
+        address=app_settings.temporal_address,
     )
     repository = SqlAlchemyHypothesisRepository(database.session_factory)
 
@@ -43,10 +46,11 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     @application.on_event("startup")
     async def on_startup() -> None:
-        await database.create_all()
+        await upgrade_database(app_settings.database_url)
 
     @application.on_event("shutdown")
     async def on_shutdown() -> None:
+        await workflow_client.close()
         await database.dispose()
 
     return application

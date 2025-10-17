@@ -14,6 +14,8 @@ class AppSettings(BaseSettings):
     api_prefix: str = "/v1"
     temporal_namespace: str = "default"
     temporal_task_queue: str = "raven-hypothesis"
+    temporal_address: str = "localhost:7233"
+    temporal_workflow: str = "HypothesisValidationWorkflow"
     database_url: str = "sqlite+aiosqlite:///./raven.db"
 
     model_config = SettingsConfigDict(env_prefix="RAVEN_", case_sensitive=False)
