@@ -59,9 +59,9 @@ class SqlAlchemyHypothesisRepository(HypothesisRepository):
                 HypothesisRecordModel(
                     id=str(record.hypothesis_id),
                     user_id=record.request.user_id,
-                    payload=record.request.model_dump(),
+                    payload=record.request.model_dump(mode="json"),
                     status=record.status,
-                    validation=record.validation.model_dump(),
+                    validation=record.validation.model_dump(mode="json"),
                     workflow_id=record.workflow_id,
                     workflow_run_id=record.workflow_run_id,
                 )

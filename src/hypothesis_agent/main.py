@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from hypothesis_agent.api.router import api_router
+from hypothesis_agent.api.ui import ui_router
 from hypothesis_agent.config import AppSettings, get_settings
 from hypothesis_agent.db.migrations import upgrade_database
 from hypothesis_agent.db.session import Database
@@ -24,6 +25,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         version="0.1.0",
         description="Accepts hypotheses for validation and orchestrates the RAVEN workflow.",
     )
+    application.include_router(ui_router)
     application.include_router(api_router, prefix=app_settings.api_prefix)
     application.state.settings = app_settings
 

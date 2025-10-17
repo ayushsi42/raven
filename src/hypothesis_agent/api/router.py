@@ -5,7 +5,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from hypothesis_agent.models.hypothesis import HypothesisRequest, HypothesisResponse
+from hypothesis_agent.models.hypothesis import (
+    HypothesisRequest,
+    HypothesisResponse,
+    HypothesisStatusResponse,
+)
 from hypothesis_agent.services.hypothesis_service import HypothesisService
 
 api_router = APIRouter()
@@ -43,6 +47,24 @@ async def get_hypothesis(
 
     try:
         return await service.get(hypothesis_id)
+    except KeyError as exc:
+        detail = exc.args[0] if exc.args else "Hypothesis not found"
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=detail) from exc
+
+
+@api_router.get(
+    "/hypotheses/{hypothesis_id}/status",
+    response_model=HypothesisStatusResponse,
+    summary="Retrieve live workflow execution status for a hypothesis",
+)
+async def get_hypothesis_status(
+    hypothesis_id: UUID,
+    service: HypothesisService = Depends(get_hypothesis_service),
+) -> HypothesisStatusResponse:
+    """Return workflow execution state for a hypothesis."""
+
+    try:
+        return await service.get_status(hypothesis_id)
     except KeyError as exc:
         detail = exc.args[0] if exc.args else "Hypothesis not found"
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=detail) from exc

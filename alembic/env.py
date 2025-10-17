@@ -8,7 +8,7 @@ from typing import Any, Dict
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from hypothesis_agent.config import get_settings
 from hypothesis_agent.db.base import Base
@@ -28,9 +28,11 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
+    configured_url = config.get_main_option("sqlalchemy.url")
+    if configured_url:
+        return configured_url
     settings = get_settings()
-    env_url = settings.database_url
-    return env_url or config.get_main_option("sqlalchemy.url")
+    return settings.database_url
 
 
 def run_migrations_offline() -> None:
@@ -53,12 +55,10 @@ def run_migrations_online() -> None:
 
     configuration: Dict[str, Any] = config.get_section(config.config_ini_section) or {}
     configuration["sqlalchemy.url"] = _database_url()
-    connectable = AsyncEngine(
-        create_async_engine(
-            configuration["sqlalchemy.url"],
-            poolclass=pool.NullPool,
-            future=True,
-        )
+    connectable = create_async_engine(
+        configuration["sqlalchemy.url"],
+        poolclass=pool.NullPool,
+        future=True,
     )
 
     async def do_run_migrations(connection: Connection) -> None:
@@ -68,7 +68,7 @@ def run_migrations_online() -> None:
         await connection.run_sync(lambda sync_conn: context.run_migrations())
 
     async def run_async_migrations() -> None:
-        async with connectable.connect() as connection:
+        async with connectable.begin() as connection:
             await do_run_migrations(connection)
         await connectable.dispose()
 

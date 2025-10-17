@@ -6,10 +6,38 @@ from uuid import uuid4
 
 import pytest
 
-from hypothesis_agent.models.hypothesis import HypothesisRequest, TimeHorizon, ValidationSummary
+from hypothesis_agent.models.hypothesis import (
+    HypothesisRequest,
+    MilestoneStatus,
+    TimeHorizon,
+    ValidationSummary,
+    WorkflowMilestone,
+)
 from hypothesis_agent.repositories.hypothesis_repository import InMemoryHypothesisRepository
 from hypothesis_agent.services.hypothesis_service import HypothesisService
-from hypothesis_agent.workflows.hypothesis_workflow import WorkflowSubmissionResult
+from hypothesis_agent.workflows.hypothesis_workflow import (
+    WorkflowExecutionDetails,
+    WorkflowSubmissionResult,
+)
+
+
+def _make_validation_summary() -> ValidationSummary:
+    milestones = [
+        WorkflowMilestone(name="data_ingest", status=MilestoneStatus.COMPLETED, detail="Data collected."),
+        WorkflowMilestone(name="preprocessing", status=MilestoneStatus.COMPLETED, detail="Data normalized."),
+        WorkflowMilestone(name="analysis", status=MilestoneStatus.COMPLETED, detail="Diagnostics computed."),
+        WorkflowMilestone(name="sentiment", status=MilestoneStatus.COMPLETED, detail="Sentiment scored."),
+        WorkflowMilestone(name="modeling", status=MilestoneStatus.COMPLETED, detail="Scenarios modeled."),
+        WorkflowMilestone(name="report_generation", status=MilestoneStatus.COMPLETED, detail="Report compiled."),
+    ]
+    return ValidationSummary(
+        score=0.61,
+        conclusion="Partially supported",
+        confidence=0.57,
+        evidence=[],
+        current_stage="report_generation",
+        milestones=milestones,
+    )
 
 
 class _StubWorkflowClient:
@@ -17,12 +45,14 @@ class _StubWorkflowClient:
         return WorkflowSubmissionResult(
             workflow_id=f"wf-{hypothesis_id}",
             workflow_run_id=f"run-{hypothesis_id}",
-            validation=ValidationSummary(
-                score=0.0,
-                conclusion="Pending analysis",
-                confidence=0.0,
-                evidence=[],
-            ),
+            validation=_make_validation_summary(),
+        )
+
+    async def describe(self, workflow_id: str, workflow_run_id: str):
+        return WorkflowExecutionDetails(
+            status="RUNNING",
+            history_length=10,
+            milestones=_make_validation_summary().milestones,
         )
 
 
@@ -50,7 +80,15 @@ async def test_service_submit_persists_and_returns_response() -> None:
     assert fetched.workflow_id.startswith("wf-")
     assert fetched.workflow_run_id.startswith("run-")
     assert fetched.status == "accepted"
-    assert fetched.validation.conclusion == "Pending analysis"
+    assert fetched.validation.conclusion == "Partially supported"
+    assert fetched.validation.milestones[0].name == "data_ingest"
+
+    status = await service.get_status(response.hypothesis_id)
+
+    assert status.workflow_status == "RUNNING"
+    assert status.workflow_history_length == 10
+    assert status.validation.current_stage == "report_generation"
+    assert len(status.validation.milestones) == 6
 
 
 @pytest.mark.asyncio

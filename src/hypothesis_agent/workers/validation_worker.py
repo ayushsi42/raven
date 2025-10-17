@@ -8,7 +8,14 @@ from temporalio.client import Client as TemporalClient
 from temporalio.worker import Worker
 
 from hypothesis_agent.config import get_settings
-from hypothesis_agent.workflows.activities.validation import perform_validation
+from hypothesis_agent.workflows.activities.validation import (
+    perform_validation,
+    run_analysis,
+    run_data_ingestion,
+    run_modeling,
+    run_preprocessing,
+    run_sentiment,
+)
 from hypothesis_agent.workflows.definitions import HypothesisValidationWorkflow
 
 logger = logging.getLogger(__name__)
@@ -25,7 +32,14 @@ async def run_worker() -> None:
         client,
         task_queue=settings.temporal_task_queue,
         workflows=[HypothesisValidationWorkflow],
-        activities=[perform_validation],
+        activities=[
+            run_data_ingestion,
+            run_preprocessing,
+            run_analysis,
+            run_sentiment,
+            run_modeling,
+            perform_validation,
+        ],
     )
 
     logger.info(

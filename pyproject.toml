@@ -12,7 +12,10 @@ dependencies = [
     "aiosqlite>=0.19,<1",
     "alembic>=1.13,<2",
     "temporalio>=1.5,<2",
-    "uvicorn[standard]>=0.30,<0.31"
+    "uvicorn[standard]>=0.30,<0.31",
+    "langgraph>=0.0.52,<0.1",
+    "composio-langchain>=0.4,<0.5",
+    "langchain>=0.2,<0.3"
 ]
 
 [project.optional-dependencies]

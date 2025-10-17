@@ -10,8 +10,33 @@ from pytest import TempPathFactory
 from hypothesis_agent.config import AppSettings
 from hypothesis_agent.db.migrations import upgrade_database
 from hypothesis_agent.db.session import Database
-from hypothesis_agent.models.hypothesis import HypothesisRequest, TimeHorizon, ValidationSummary
+from hypothesis_agent.models.hypothesis import (
+    HypothesisRequest,
+    MilestoneStatus,
+    TimeHorizon,
+    ValidationSummary,
+    WorkflowMilestone,
+)
 from hypothesis_agent.repositories.hypothesis_repository import HypothesisRecord, SqlAlchemyHypothesisRepository
+
+
+def _make_validation_summary() -> ValidationSummary:
+    milestones = [
+        WorkflowMilestone(name="data_ingest", status=MilestoneStatus.COMPLETED, detail="Data collected."),
+        WorkflowMilestone(name="preprocessing", status=MilestoneStatus.COMPLETED, detail="Data normalized."),
+        WorkflowMilestone(name="analysis", status=MilestoneStatus.COMPLETED, detail="Diagnostics computed."),
+        WorkflowMilestone(name="sentiment", status=MilestoneStatus.COMPLETED, detail="Sentiment scored."),
+        WorkflowMilestone(name="modeling", status=MilestoneStatus.COMPLETED, detail="Scenarios modeled."),
+        WorkflowMilestone(name="report_generation", status=MilestoneStatus.COMPLETED, detail="Report compiled."),
+    ]
+    return ValidationSummary(
+        score=0.61,
+        conclusion="Partially supported",
+        confidence=0.57,
+        evidence=[],
+        current_stage="report_generation",
+        milestones=milestones,
+    )
 
 
 @pytest.mark.asyncio
@@ -37,12 +62,7 @@ async def test_sqlalchemy_repository_persists_and_retrieves(tmp_path_factory: Te
             workflow_run_id="run-123",
             request=hypothesis_request,
             status="accepted",
-            validation=ValidationSummary(
-                score=0.0,
-                conclusion="Pending analysis",
-                confidence=0.0,
-                evidence=[],
-            ),
+            validation=_make_validation_summary(),
         )
 
         await repository.save(record)

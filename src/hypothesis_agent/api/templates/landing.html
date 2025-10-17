@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RAVEN Hypothesis Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #000000;
+        --surface: rgba(18, 18, 18, 0.6);
+        --surface-strong: rgba(12, 12, 12, 0.8);
+        --border: rgba(255, 255, 255, 0.06);
+        --border-focus: rgba(255, 255, 255, 0.12);
+        --text-primary: #ffffff;
+        --text-muted: rgba(255, 255, 255, 0.5);
+        --text-subtle: rgba(255, 255, 255, 0.3);
+        --accent: #ffffff;
+        --accent-soft: rgba(255, 255, 255, 0.08);
+        --accent-hover: rgba(255, 255, 255, 0.12);
+        font-family: "Inter", system-ui, -apple-system, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text-primary);
+        padding: clamp(3rem, 6vw, 4rem) 2.5rem;
+        font-size: 14px;
+        line-height: 1.5;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+      }
+
+      .canvas {
+        width: min(1200px, 100%);
+        display: grid;
+        gap: clamp(2.5rem, 4vw, 3.25rem);
+        padding: clamp(2.5rem, 5vw, 3.75rem);
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        box-shadow: 0 28px 80px rgba(0, 0, 0, 0.35);
+      }
+
+      header {
+        display: grid;
+        gap: 0.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 2rem;
+        font-weight: 300;
+        letter-spacing: -0.02em;
+      }
+
+      header p {
+        margin: 0;
+        max-width: 65ch;
+        color: var(--text-muted);
+        font-weight: 300;
+        line-height: 1.6;
+      }
+
+      .content {
+        display: grid;
+        gap: 2rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 1000px) {
+        .content {
+          grid-template-columns: 1.2fr 1fr;
+          gap: 3rem;
+        }
+      }
+
+      form {
+        display: grid;
+        gap: 1.5rem;
+      }
+
+      label {
+        display: block;
+      }
+
+      label span {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      input[type="text"],
+      input[type="date"],
+      textarea,
+      select {
+        width: 100%;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text-primary);
+        padding: 0.75rem 1rem;
+        font-size: 14px;
+        font-family: inherit;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+        line-height: 1.6;
+      }
+
+      input:focus,
+      textarea:focus,
+      select:focus {
+        outline: none;
+        border-color: var(--border-focus);
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      input::placeholder,
+      textarea::placeholder {
+        color: var(--text-subtle);
+      }
+
+      .form-row {
+        display: grid;
+        gap: 1.5rem;
+      }
+
+      .form-row.wrap {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .form-field {
+        display: flex;
+        flex-direction: column;
+      }
+
+      button {
+        padding: 0.875rem 2rem;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--accent-soft);
+        color: var(--text-primary);
+        font-weight: 500;
+        font-size: 13px;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        font-family: inherit;
+        text-transform: uppercase;
+        justify-self: start;
+      }
+
+      button:hover {
+        background: var(--accent-hover);
+        border-color: var(--border-focus);
+        transform: translateY(-1px);
+      }
+
+      button:active {
+        transform: translateY(0);
+      }
+
+      .status-panel {
+        display: grid;
+        gap: 2rem;
+        align-content: start;
+      }
+
+      .status-panel h2 {
+        margin: 0;
+        font-weight: 500;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .status-grid {
+        display: grid;
+        gap: 1.5rem;
+        font-size: 13px;
+      }
+
+      .status-grid > div {
+        display: grid;
+        gap: 0.375rem;
+      }
+
+      .status-grid strong {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-subtle);
+        font-weight: 500;
+      }
+
+      .status-grid span {
+        color: var(--text-primary);
+        font-weight: 300;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        background: var(--accent-soft);
+        border: 1px solid var(--border);
+        color: var(--text-primary);
+        font-size: 11px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        font-weight: 500;
+        width: fit-content;
+      }
+
+      .milestones {
+        display: grid;
+        gap: 0.5rem;
+      }
+
+      .milestone-header {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-subtle);
+        font-weight: 500;
+        margin-bottom: 0.5rem;
+      }
+
+      .milestone {
+        padding: 0.75rem 1rem;
+        border-radius: 4px;
+        background: transparent;
+        border: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+        transition: background 0.2s ease;
+      }
+
+      .milestone:hover {
+        background: var(--accent-soft);
+      }
+
+      .milestone span:first-child {
+        font-weight: 400;
+      }
+
+      .milestone span:last-child {
+        color: var(--text-subtle);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 500;
+      }
+
+      section.report {
+        display: grid;
+        gap: 1rem;
+      }
+
+      section.report h2 {
+        margin: 0;
+        font-weight: 500;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      pre {
+        margin: 0;
+        padding: 1.5rem;
+        border-radius: 6px;
+        background: var(--surface-strong);
+        border: 1px solid var(--border);
+        font-size: 12px;
+        line-height: 1.7;
+        overflow-x: auto;
+        font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+        color: var(--text-muted);
+        font-weight: 300;
+      }
+
+      /* Scrollbar styling */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 4px;
+      }
+
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--border-focus);
+      }
+
+      /* Select styling */
+      select {
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='rgba(255,255,255,0.3)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 1rem center;
+        padding-right: 2.5rem;
+      }
+    </style>
+  </head>
+  <body data-api-base="{{ api_prefix }}">
+    <div class="canvas">
+      <header>
+        <h1>RAVEN</h1>
+        <p>
+          Submit a financial hypothesis to trigger LangGraph agents, Composio-powered data ingest, and
+          Temporal-style milestones. Track the orchestration in real-time, then inspect the fully audited
+          validation summary.
+        </p>
+      </header>
+      <div class="content">
+        <form id="hypothesis-form">
+          <label>
+            <span>Hypothesis</span>
+            <textarea
+              name="hypothesis_text"
+              placeholder="e.g. Company X expands EBITDA margin by 200bps next year"
+              required
+            ></textarea>
+          </label>
+          <div class="form-row wrap">
+            <label class="form-field">
+              <span>Entities</span>
+              <input type="text" name="entities" placeholder="Ticker or company name" />
+            </label>
+            <label class="form-field">
+              <span>User ID</span>
+              <input type="text" name="user_id" placeholder="Your identifier" required />
+            </label>
+          </div>
+          <div class="form-row wrap">
+            <label class="form-field">
+              <span>Start Date</span>
+              <input type="date" name="start" required />
+            </label>
+            <label class="form-field">
+              <span>End Date</span>
+              <input type="date" name="end" required />
+            </label>
+            <label class="form-field">
+              <span>Risk Appetite</span>
+              <select name="risk_appetite">
+                <option value="moderate" selected>Moderate</option>
+                <option value="low">Low</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+          </div>
+          <label>
+            <span>Require Human Review?</span>
+            <select name="requires_human_review">
+              <option value="false" selected>No</option>
+              <option value="true">Yes</option>
+            </select>
+          </label>
+          <button type="submit">Validate Hypothesis</button>
+        </form>
+        <aside class="status-panel">
+          <h2>Status Overview</h2>
+          <div class="status-grid">
+            <div><strong>Hypothesis ID</strong><br /><span id="hypothesis-id">—</span></div>
+            <div><strong>Workflow</strong><br /><span id="workflow-id">—</span></div>
+            <div><strong>Conclusion</strong><br /><span id="conclusion">—</span></div>
+            <div><strong>Confidence</strong><br /><span id="confidence">—</span></div>
+            <div class="pill" id="status-pill">Awaiting submission</div>
+          </div>
+          <div class="milestones">
+            <div class="milestone-header">Milestones</div>
+            <div id="milestone-list"></div>
+          </div>
+        </aside>
+      </div>
+      <section class="report">
+        <h2>Validation Summary</h2>
+        <pre id="summary-json">Submit a hypothesis to see the validation report.</pre>
+      </section>
+    </div>
+    <script>
+      const form = document.getElementById('hypothesis-form');
+      const statusCard = {
+        hypothesisId: document.getElementById('hypothesis-id'),
+        workflowId: document.getElementById('workflow-id'),
+        conclusion: document.getElementById('conclusion'),
+        confidence: document.getElementById('confidence'),
+        pill: document.getElementById('status-pill'),
+        milestones: document.getElementById('milestone-list'),
+        summary: document.getElementById('summary-json'),
+      };
+
+      let currentHypothesisId = null;
+      const apiBase = document.body.dataset.apiBase;
+
+      const stageLabels = {
+        data_ingest: 'Data Ingest',
+        preprocessing: 'Preprocessing',
+        analysis: 'Analysis',
+        sentiment: 'Sentiment',
+        modeling: 'Modeling',
+        report_generation: 'Report Generation',
+      };
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        statusCard.pill.textContent = 'Submitting…';
+        statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
+        const formData = new FormData(form);
+        const entities = formData.get('entities')
+          ? formData.get('entities').split(',').map((item) => item.trim()).filter(Boolean)
+          : [];
+
+        const payload = {
+          user_id: formData.get('user_id'),
+          hypothesis_text: formData.get('hypothesis_text'),
+          entities,
+          time_horizon: {
+            start: formData.get('start'),
+            end: formData.get('end'),
+          },
+          risk_appetite: formData.get('risk_appetite'),
+          requires_human_review: formData.get('requires_human_review') === 'true',
+        };
+
+        try {
+          const response = await fetch(`${apiBase}/hypotheses`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            throw new Error(`Submission failed: ${response.status}`);
+          }
+
+          const data = await response.json();
+          updateSummary(data);
+          currentHypothesisId = data.hypothesis_id;
+          statusCard.pill.textContent = 'Submitted';
+          statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
+          pollStatus();
+        } catch (error) {
+          console.error(error);
+          statusCard.pill.textContent = 'Error submitting hypothesis';
+          statusCard.pill.style.background = 'rgba(248, 113, 113, 0.15)';
+        }
+      });
+
+      async function pollStatus() {
+        if (!currentHypothesisId) return;
+        statusCard.pill.textContent = 'Processing…';
+        statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
+        try {
+          const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/status`);
+          if (!response.ok) throw new Error('Failed to fetch status');
+          const data = await response.json();
+          updateSummary(data);
+          if (data.validation?.current_stage === 'report_generation') {
+            statusCard.pill.textContent = 'Completed';
+            statusCard.pill.style.background = 'rgba(34, 197, 94, 0.15)';
+          } else {
+            setTimeout(pollStatus, 2500);
+          }
+        } catch (error) {
+          console.error(error);
+          statusCard.pill.textContent = 'Status unavailable';
+          statusCard.pill.style.background = 'rgba(248, 113, 113, 0.15)';
+        }
+      }
+
+      function updateSummary(data) {
+        statusCard.hypothesisId.textContent = data.hypothesis_id ?? '—';
+        statusCard.workflowId.textContent = data.workflow_id ?? '—';
+        statusCard.conclusion.textContent = data.validation?.conclusion ?? '—';
+        statusCard.confidence.textContent = data.validation?.confidence
+          ? `${(data.validation.confidence * 100).toFixed(1)}%`
+          : '—';
+        statusCard.summary.textContent = JSON.stringify(data, null, 2);
+        statusCard.milestones.replaceChildren();
+        const milestones = data.validation?.milestones ?? [];
+        milestones.forEach((milestone) => {
+          const row = document.createElement('div');
+          row.className = 'milestone';
+          const name = stageLabels[milestone.name] ?? milestone.name;
+          row.innerHTML = `<span>${name}</span><span>${milestone.status}</span>`;
+          statusCard.milestones.appendChild(row);
+        });
+      }
+    </script>
+  </body>
+</html>

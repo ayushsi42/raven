@@ -42,6 +42,24 @@ class EvidenceReference(BaseModel):
     uri: HttpUrl = Field(..., description="Location of the evidence artifact.")
 
 
+class MilestoneStatus(str, Enum):
+    """Lifecycle status markers for workflow milestones."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    WAITING_REVIEW = "waiting_review"
+    BLOCKED = "blocked"
+
+
+class WorkflowMilestone(BaseModel):
+    """Represents progress through the validation workflow."""
+
+    name: str = Field(..., description="Identifier for the milestone within the workflow.")
+    status: MilestoneStatus = Field(..., description="Current state for the milestone.")
+    detail: str | None = Field(default=None, description="Optional contextual message about the milestone.")
+
+
 class ValidationSummary(BaseModel):
     """Summary placeholder for validation outcomes."""
 
@@ -49,6 +67,14 @@ class ValidationSummary(BaseModel):
     conclusion: str = Field(..., description="High-level status of the hypothesis validation.")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Model confidence for the reported conclusion.")
     evidence: List[EvidenceReference] = Field(default_factory=list, description="Evidence artifacts supporting the conclusion.")
+    current_stage: str = Field(
+        default="pending",
+        description="Human-readable name for the currently active workflow stage.",
+    )
+    milestones: List[WorkflowMilestone] = Field(
+        default_factory=list,
+        description="Ordered list of workflow milestones with their statuses.",
+    )
 
 
 class HypothesisResponse(BaseModel):
@@ -59,3 +85,13 @@ class HypothesisResponse(BaseModel):
     workflow_run_id: str = Field(..., description="Temporal run identifier for tracking retries and history.")
     status: str = Field(..., description="Submission status for the hypothesis workflow.")
     validation: ValidationSummary = Field(..., description="Summary of the validation state.")
+
+
+class HypothesisStatusResponse(HypothesisResponse):
+    """Extended response including live workflow execution state."""
+
+    workflow_status: str = Field(..., description="Temporal workflow execution status.")
+    workflow_history_length: int | None = Field(
+        default=None,
+        description="Number of events in the workflow history if available.",
+    )
