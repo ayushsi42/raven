@@ -9,6 +9,7 @@ import pytest
 from hypothesis_agent.models.hypothesis import (
     HypothesisRequest,
     MilestoneStatus,
+    ResumeRequest,
     TimeHorizon,
     ValidationSummary,
     WorkflowMilestone,
@@ -24,10 +25,13 @@ from hypothesis_agent.workflows.hypothesis_workflow import (
 def _make_validation_summary() -> ValidationSummary:
     milestones = [
         WorkflowMilestone(name="data_ingest", status=MilestoneStatus.COMPLETED, detail="Data collected."),
+        WorkflowMilestone(name="entity_resolution", status=MilestoneStatus.COMPLETED, detail="Entities resolved."),
         WorkflowMilestone(name="preprocessing", status=MilestoneStatus.COMPLETED, detail="Data normalized."),
         WorkflowMilestone(name="analysis", status=MilestoneStatus.COMPLETED, detail="Diagnostics computed."),
         WorkflowMilestone(name="sentiment", status=MilestoneStatus.COMPLETED, detail="Sentiment scored."),
         WorkflowMilestone(name="modeling", status=MilestoneStatus.COMPLETED, detail="Scenarios modeled."),
+        WorkflowMilestone(name="advanced_modeling", status=MilestoneStatus.COMPLETED, detail="Advanced metrics."),
+        WorkflowMilestone(name="human_review", status=MilestoneStatus.COMPLETED, detail="Review skipped."),
         WorkflowMilestone(name="report_generation", status=MilestoneStatus.COMPLETED, detail="Report compiled."),
     ]
     return ValidationSummary(
@@ -54,6 +58,12 @@ class _StubWorkflowClient:
             history_length=10,
             milestones=_make_validation_summary().milestones,
         )
+
+    async def resume(self, workflow_id: str, workflow_run_id: str, decision: str = "approved"):
+        return _make_validation_summary()
+
+    async def fetch_summary(self, workflow_id: str, workflow_run_id: str):
+        return _make_validation_summary()
 
 
 @pytest.mark.asyncio
@@ -88,7 +98,7 @@ async def test_service_submit_persists_and_returns_response() -> None:
     assert status.workflow_status == "RUNNING"
     assert status.workflow_history_length == 10
     assert status.validation.current_stage == "report_generation"
-    assert len(status.validation.milestones) == 6
+    assert len(status.validation.milestones) == 9
 
 
 @pytest.mark.asyncio
@@ -102,3 +112,26 @@ async def test_service_get_missing_raises_key_error() -> None:
 
     with pytest.raises(KeyError):
         await service.get(uuid4())
+
+
+@pytest.mark.asyncio
+async def test_service_resume_updates_status() -> None:
+    repository = InMemoryHypothesisRepository()
+    service = HypothesisService(
+        repository=repository,
+        workflow_client=_StubWorkflowClient(),
+    )
+    request = HypothesisRequest(
+        user_id="user-456",
+        hypothesis_text="Revenue acceleration",
+        entities=["Company Z"],
+        time_horizon=TimeHorizon(start=date(2025, 1, 1), end=date(2025, 12, 31)),
+        requires_human_review=True,
+    )
+
+    submission = await service.submit(request)
+    resume_response = await service.resume(submission.hypothesis_id, ResumeRequest())
+
+    assert resume_response.status == "completed"
+    stored = await service.get(submission.hypothesis_id)
+    assert stored.status == "completed"

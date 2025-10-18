@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from datetime import date
 from enum import Enum
-from typing import List
+from typing import List, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import AnyUrl, BaseModel, Field
 
 
 class RiskAppetite(str, Enum):
@@ -39,7 +39,7 @@ class EvidenceReference(BaseModel):
     """Reference to an evidence artifact stored in object storage or external systems."""
 
     type: str = Field(..., description="Category of the evidence artifact.")
-    uri: HttpUrl = Field(..., description="Location of the evidence artifact.")
+    uri: AnyUrl = Field(..., description="Location of the evidence artifact.")
 
 
 class MilestoneStatus(str, Enum):
@@ -94,4 +94,13 @@ class HypothesisStatusResponse(HypothesisResponse):
     workflow_history_length: int | None = Field(
         default=None,
         description="Number of events in the workflow history if available.",
+    )
+
+
+class ResumeRequest(BaseModel):
+    """Human review decision payload used when resuming a workflow."""
+
+    decision: Literal["approved", "rejected", "needs_changes"] = Field(
+        default="approved",
+        description="Outcome of the manual review step.",
     )

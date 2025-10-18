@@ -7,9 +7,12 @@ from datetime import date
 
 from hypothesis_agent.models.hypothesis import HypothesisRequest, TimeHorizon
 from hypothesis_agent.workflows.activities.validation import (
+    await_human_review,
     perform_validation,
+    run_advanced_modeling,
     run_analysis,
     run_data_ingestion,
+    run_entity_resolution,
     run_modeling,
     run_preprocessing,
     run_sentiment,
@@ -31,14 +34,24 @@ async def test_perform_validation_returns_deterministic_summary() -> None:
 
     for activity in [
         run_data_ingestion,
+        run_entity_resolution,
         run_preprocessing,
         run_analysis,
         run_sentiment,
         run_modeling,
+        run_advanced_modeling,
     ]:
         stage_result = await activity({"request": payload["request"], "context": context, "milestones": milestones})
         context = stage_result["context"]
         milestones.append(stage_result["milestone"])
+
+    human_result = await await_human_review({
+        "request": payload["request"],
+        "context": context,
+        "milestones": milestones,
+    })
+    context = human_result["context"]
+    milestones.append(human_result["milestone"])
 
     final_result = await perform_validation({"request": payload["request"], "context": context, "milestones": milestones})
     summary = final_result["summary"]

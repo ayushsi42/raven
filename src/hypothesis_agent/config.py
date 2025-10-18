@@ -17,6 +17,11 @@ class AppSettings(BaseSettings):
     temporal_address: str = "localhost:7233"
     temporal_workflow: str = "HypothesisValidationWorkflow"
     database_url: str = "sqlite+aiosqlite:///./raven.db"
+    artifact_store_path: str = "./data/artifacts"
+    alpha_vantage_api_key: str = "demo"
+    sec_user_agent: str = "RAVEN/0.1 (support@example.com)"
+    api_key: str | None = None
+    enable_prometheus: bool = True
 
     model_config = SettingsConfigDict(env_prefix="RAVEN_", case_sensitive=False)
 

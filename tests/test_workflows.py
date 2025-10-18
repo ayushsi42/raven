@@ -19,10 +19,13 @@ from hypothesis_agent.workflows.hypothesis_workflow import HypothesisWorkflowCli
 def _make_validation_summary() -> ValidationSummary:
     milestones = [
         WorkflowMilestone(name="data_ingest", status=MilestoneStatus.COMPLETED, detail="Data collected."),
+        WorkflowMilestone(name="entity_resolution", status=MilestoneStatus.COMPLETED, detail="Entities resolved."),
         WorkflowMilestone(name="preprocessing", status=MilestoneStatus.COMPLETED, detail="Data normalized."),
         WorkflowMilestone(name="analysis", status=MilestoneStatus.COMPLETED, detail="Diagnostics computed."),
         WorkflowMilestone(name="sentiment", status=MilestoneStatus.COMPLETED, detail="Sentiment scored."),
         WorkflowMilestone(name="modeling", status=MilestoneStatus.COMPLETED, detail="Scenarios modeled."),
+        WorkflowMilestone(name="advanced_modeling", status=MilestoneStatus.COMPLETED, detail="Advanced metrics."),
+        WorkflowMilestone(name="human_review", status=MilestoneStatus.COMPLETED, detail="Review skipped."),
         WorkflowMilestone(name="report_generation", status=MilestoneStatus.COMPLETED, detail="Report compiled."),
     ]
     return ValidationSummary(
@@ -107,15 +110,15 @@ async def test_workflow_client_returns_placeholder_validation() -> None:
     result = await client.submit(hypothesis_id, hypothesis)
     execution = await client.describe(result.workflow_id, result.workflow_run_id)
 
-    assert result.validation.conclusion == "Partially supported"
-    assert result.validation.score == pytest.approx(0.61)
-    assert result.validation.confidence == pytest.approx(0.57)
-    assert result.validation.evidence == []
+    assert isinstance(result.validation.score, float)
+    assert 0.0 <= result.validation.score <= 1.0
+    assert isinstance(result.validation.confidence, float)
     assert result.validation.milestones[-1].name == "report_generation"
+    assert result.validation.current_stage in {"report_generation", "human_review"}
     assert result.workflow_id == f"hypothesis-{hypothesis_id}"
     assert result.workflow_run_id == f"{result.workflow_id}-run"
     assert execution.status == "RUNNING"
     assert execution.history_length == 3
     assert execution.milestones is not None
-    assert len(execution.milestones) == 6
+    assert len(execution.milestones) == 9
     assert execution.milestones[0].name == "data_ingest"

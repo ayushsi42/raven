@@ -129,6 +129,10 @@
         line-height: 1.6;
       }
 
+      .hidden {
+        display: none !important;
+      }
+
       input:focus,
       textarea:focus,
       select:focus {
@@ -410,6 +414,20 @@
             <div class="milestone-header">Milestones</div>
             <div id="milestone-list"></div>
           </div>
+          <div id="resume-controls" class="hidden">
+            <div class="milestone-header">Human Review</div>
+            <div class="form-row wrap">
+              <label class="form-field">
+                <span>Decision</span>
+                <select id="resume-decision">
+                  <option value="approved" selected>Approve</option>
+                  <option value="rejected">Reject</option>
+                  <option value="needs_changes">Needs Changes</option>
+                </select>
+              </label>
+              <button type="button" id="resume-button">Submit Decision</button>
+            </div>
+          </div>
         </aside>
       </div>
       <section class="report">
@@ -427,6 +445,9 @@
         pill: document.getElementById('status-pill'),
         milestones: document.getElementById('milestone-list'),
         summary: document.getElementById('summary-json'),
+        resumeControls: document.getElementById('resume-controls'),
+        resumeDecision: document.getElementById('resume-decision'),
+        resumeButton: document.getElementById('resume-button'),
       };
 
       let currentHypothesisId = null;
@@ -434,10 +455,13 @@
 
       const stageLabels = {
         data_ingest: 'Data Ingest',
+        entity_resolution: 'Entity Resolution',
         preprocessing: 'Preprocessing',
         analysis: 'Analysis',
         sentiment: 'Sentiment',
         modeling: 'Modeling',
+        advanced_modeling: 'Advanced Modeling',
+        human_review: 'Human Review',
         report_generation: 'Report Generation',
       };
 
@@ -525,7 +549,35 @@
           row.innerHTML = `<span>${name}</span><span>${milestone.status}</span>`;
           statusCard.milestones.appendChild(row);
         });
+        const waiting = milestones.some((milestone) => milestone.name === 'human_review' && milestone.status === 'waiting_review');
+        statusCard.resumeControls.classList.toggle('hidden', !waiting);
+        if (waiting) {
+          statusCard.pill.textContent = 'Awaiting human review';
+          statusCard.pill.style.background = 'rgba(251, 191, 36, 0.2)';
+        }
       }
+
+      statusCard.resumeButton.addEventListener('click', async () => {
+        if (!currentHypothesisId) return;
+        statusCard.pill.textContent = 'Submitting decision…';
+        statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
+        try {
+          const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/resume`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ decision: statusCard.resumeDecision.value }),
+          });
+          if (!response.ok) throw new Error('Resume failed');
+          const data = await response.json();
+          updateSummary(data);
+          statusCard.pill.textContent = 'Review completed';
+          statusCard.pill.style.background = 'rgba(34, 197, 94, 0.15)';
+        } catch (error) {
+          console.error(error);
+          statusCard.pill.textContent = 'Resume failed';
+          statusCard.pill.style.background = 'rgba(248, 113, 113, 0.15)';
+        }
+      });
     </script>
   </body>
 </html>

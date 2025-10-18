@@ -5,7 +5,11 @@ from typing import Dict, List
 
 from temporalio import activity
 
-from hypothesis_agent.models.hypothesis import HypothesisRequest, WorkflowMilestone
+from hypothesis_agent.models.hypothesis import (
+    HypothesisRequest,
+    MilestoneStatus,
+    WorkflowMilestone,
+)
 from hypothesis_agent.orchestration.langgraph_pipeline import (
     LangGraphValidationOrchestrator,
     StageExecutionResult,
@@ -49,9 +53,16 @@ def _load_orchestrator_result(stage: str, payload: Dict) -> Dict:
 
 @activity.defn(name="run_data_ingestion")
 async def run_data_ingestion(payload: Dict) -> Dict:
-    """Collect raw datasets using LangGraph-driven Composio connectors."""
+    """Collect raw datasets using public-market connectors."""
 
     return _load_orchestrator_result("data_ingest", payload)
+
+
+@activity.defn(name="run_entity_resolution")
+async def run_entity_resolution(payload: Dict) -> Dict:
+    """Resolve entity metadata such as CIK mappings."""
+
+    return _load_orchestrator_result("entity_resolution", payload)
 
 
 @activity.defn(name="run_preprocessing")
@@ -80,6 +91,54 @@ async def run_modeling(payload: Dict) -> Dict:
     """Generate probabilistic modeling scenarios."""
 
     return _load_orchestrator_result("modeling", payload)
+
+
+@activity.defn(name="run_advanced_modeling")
+async def run_advanced_modeling(payload: Dict) -> Dict:
+    """Compute advanced risk analytics such as VaR."""
+
+    return _load_orchestrator_result("advanced_modeling", payload)
+
+
+@activity.defn(name="await_human_review")
+async def await_human_review(payload: Dict) -> Dict:
+    """Pause workflow execution pending human approval when required."""
+
+    request, context, _ = _parse_activity_payload(payload)
+    metadata = dict(context.get("metadata") or {})
+    human_state = dict(metadata.get("human_review") or {})
+    requires_review = bool(
+        metadata.get("requires_human_review")
+        or request.requires_human_review
+        or human_state.get("required")
+    )
+
+    if human_state.get("decision") is not None:
+        requires_review = False
+
+    if requires_review:
+        metadata["human_review"] = {"required": True, "decision": None}
+        metadata["awaiting_review"] = True
+        milestone = WorkflowMilestone(
+            name="human_review",
+            status=MilestoneStatus.WAITING_REVIEW,
+            detail="Awaiting human reviewer decision.",
+        )
+    else:
+        metadata["human_review"] = {
+            "required": False,
+            "decision": human_state.get("decision", "auto"),
+        }
+        metadata["awaiting_review"] = False
+        milestone = WorkflowMilestone(
+            name="human_review",
+            status=MilestoneStatus.COMPLETED,
+            detail="Human review skipped or auto-approved.",
+        )
+
+    context["metadata"] = metadata
+    result = StageExecutionResult(context=context, milestone=milestone)
+    return _serialize_stage_result(result)
 
 
 @activity.defn(name="perform_validation")

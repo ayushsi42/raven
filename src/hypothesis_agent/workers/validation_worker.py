@@ -9,12 +9,15 @@ from temporalio.worker import Worker
 
 from hypothesis_agent.config import get_settings
 from hypothesis_agent.workflows.activities.validation import (
+    await_human_review,
     perform_validation,
     run_analysis,
     run_data_ingestion,
+    run_entity_resolution,
     run_modeling,
     run_preprocessing,
     run_sentiment,
+    run_advanced_modeling,
 )
 from hypothesis_agent.workflows.definitions import HypothesisValidationWorkflow
 
@@ -34,10 +37,13 @@ async def run_worker() -> None:
         workflows=[HypothesisValidationWorkflow],
         activities=[
             run_data_ingestion,
+            run_entity_resolution,
             run_preprocessing,
             run_analysis,
             run_sentiment,
             run_modeling,
+            run_advanced_modeling,
+            await_human_review,
             perform_validation,
         ],
     )

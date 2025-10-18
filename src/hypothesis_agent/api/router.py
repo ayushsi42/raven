@@ -5,14 +5,17 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from hypothesis_agent.auth import require_api_key
 from hypothesis_agent.models.hypothesis import (
     HypothesisRequest,
     HypothesisResponse,
     HypothesisStatusResponse,
+    ResumeRequest,
+    ValidationSummary,
 )
 from hypothesis_agent.services.hypothesis_service import HypothesisService
 
-api_router = APIRouter()
+api_router = APIRouter(dependencies=[Depends(require_api_key)])
 
 
 def get_hypothesis_service(request: Request) -> HypothesisService:
@@ -47,6 +50,43 @@ async def get_hypothesis(
 
     try:
         return await service.get(hypothesis_id)
+    except KeyError as exc:
+        detail = exc.args[0] if exc.args else "Hypothesis not found"
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=detail) from exc
+
+
+@api_router.get(
+    "/hypotheses/{hypothesis_id}/report",
+    response_model=ValidationSummary,
+    summary="Retrieve the persisted validation report",
+)
+async def get_hypothesis_report(
+    hypothesis_id: UUID,
+    service: HypothesisService = Depends(get_hypothesis_service),
+) -> ValidationSummary:
+    """Return the stored validation report for a hypothesis."""
+
+    try:
+        return await service.get_report(hypothesis_id)
+    except KeyError as exc:
+        detail = exc.args[0] if exc.args else "Hypothesis not found"
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=detail) from exc
+
+
+@api_router.post(
+    "/hypotheses/{hypothesis_id}/resume",
+    response_model=HypothesisResponse,
+    summary="Resume a hypothesis workflow after human review",
+)
+async def resume_hypothesis(
+    hypothesis_id: UUID,
+    request: ResumeRequest,
+    service: HypothesisService = Depends(get_hypothesis_service),
+) -> HypothesisResponse:
+    """Resume execution for a hypothesis requiring human approval."""
+
+    try:
+        return await service.resume(hypothesis_id, request)
     except KeyError as exc:
         detail = exc.args[0] if exc.args else "Hypothesis not found"
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=detail) from exc

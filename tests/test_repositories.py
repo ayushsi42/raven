@@ -23,10 +23,13 @@ from hypothesis_agent.repositories.hypothesis_repository import HypothesisRecord
 def _make_validation_summary() -> ValidationSummary:
     milestones = [
         WorkflowMilestone(name="data_ingest", status=MilestoneStatus.COMPLETED, detail="Data collected."),
+        WorkflowMilestone(name="entity_resolution", status=MilestoneStatus.COMPLETED, detail="Entities resolved."),
         WorkflowMilestone(name="preprocessing", status=MilestoneStatus.COMPLETED, detail="Data normalized."),
         WorkflowMilestone(name="analysis", status=MilestoneStatus.COMPLETED, detail="Diagnostics computed."),
         WorkflowMilestone(name="sentiment", status=MilestoneStatus.COMPLETED, detail="Sentiment scored."),
         WorkflowMilestone(name="modeling", status=MilestoneStatus.COMPLETED, detail="Scenarios modeled."),
+        WorkflowMilestone(name="advanced_modeling", status=MilestoneStatus.COMPLETED, detail="Advanced metrics."),
+        WorkflowMilestone(name="human_review", status=MilestoneStatus.COMPLETED, detail="Review skipped."),
         WorkflowMilestone(name="report_generation", status=MilestoneStatus.COMPLETED, detail="Report compiled."),
     ]
     return ValidationSummary(
