@@ -12,9 +12,8 @@ API_KEY_HEADER = APIKeyHeader(name="x-api-key", auto_error=False)
 async def require_api_key(
     request: Request,
     api_key_header: str | None = Depends(API_KEY_HEADER),
-    settings: AppSettings | None = None,
+    settings: AppSettings = Depends(get_settings),
 ) -> None:
-    settings = settings or get_settings()
     configured_key = settings.api_key
     if configured_key is None:
         return

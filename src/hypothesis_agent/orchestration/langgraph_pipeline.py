@@ -1,22 +1,24 @@
-"""LangGraph- and Composio-powered orchestration for validation activities."""
+"""LangGraph orchestration for the RAVEN validation pipeline."""
 from __future__ import annotations
 
-import logging
-import math
-from dataclasses import dataclass, field
-from statistics import fmean
-from typing import Any, Dict, List, Tuple, TypedDict, cast
+import io
+import json
+from dataclasses import asdict, dataclass, field, is_dataclass
+from pathlib import Path
+from statistics import mean, pstdev
+from typing import Any, Dict, List, Optional, Protocol, cast
 
-try:  # pragma: no cover - optional dependency in tests
-    from composio_langchain import ComposioToolSet
-except Exception:  # pragma: no cover - fall back to noop when Composio unavailable
-    class ComposioToolSet:  # type: ignore[no-redef]
-        def get_tool(self, name: str):
-            raise RuntimeError("Composio integration is not available in this environment")
-from langgraph.graph import END, StateGraph
+import matplotlib.pyplot as plt
+from composio.client import exceptions as composio_exceptions
+from composio_langchain import Composio
+from reportlab.lib.pagesizes import LETTER
+from reportlab.pdfgen import canvas
 
 from hypothesis_agent.config import AppSettings, get_settings
-from hypothesis_agent.connectors import NewsClient, SecFilingsClient, YahooFinanceClient
+from hypothesis_agent.connectors.news import NewsClient
+from hypothesis_agent.connectors.sec import SecFilingsClient
+from hypothesis_agent.connectors.yahoo import YahooFinanceClient
+from hypothesis_agent.llm import BaseLLM, LLMError, OpenAILLM
 from hypothesis_agent.models.hypothesis import (
     EvidenceReference,
     HypothesisRequest,
@@ -24,615 +26,622 @@ from hypothesis_agent.models.hypothesis import (
     ValidationSummary,
     WorkflowMilestone,
 )
-from hypothesis_agent.storage import ArtifactStore
+from hypothesis_agent.storage.artifact_store import ArtifactStore
 
-logger = logging.getLogger(__name__)
+
+StageContext = Dict[str, Any]
+
+
+@dataclass(slots=True)
+class StageExecutionResult:
+    """Container describing the outcome of a single stage."""
+
+    context: StageContext
+    milestone: WorkflowMilestone
+    evidence: List[EvidenceReference] = field(default_factory=list)
+    summary: Optional[ValidationSummary] = None
 
 
 def _clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
     return max(minimum, min(maximum, value))
 
 
-class StageContext(TypedDict, total=False):
-    """Shared context that flows between LangGraph stages."""
+class ToolHandle(Protocol):
+    """Protocol describing the interface for a Composio-like tool."""
 
-    data: Dict[str, Any]
-    normalized: Dict[str, Any]
-    analysis: Dict[str, Any]
-    sentiment: Dict[str, Any]
-    modeling: Dict[str, Any]
-    insights: List[str]
-    evidence: List[Dict[str, Any]]
-    context_notes: List[str]
-    metadata: Dict[str, Any]
+    def invoke(self, payload: Dict[str, Any]) -> Any:
+        ...
 
 
-@dataclass(slots=True)
-class StageExecutionResult:
-    """Container for stage execution outcomes used by Temporal activities."""
+class ToolSet(Protocol):
+    """Protocol describing a minimal tool registry."""
 
-    context: StageContext
-    milestone: WorkflowMilestone
-    evidence: List[EvidenceReference] = field(default_factory=list)
-    summary: ValidationSummary | None = None
-    detail: str | None = None
+    def get_tool(self, name: str) -> ToolHandle:
+        ...
 
 
-class ComposioRouter:
-    """Thin wrapper around Composio plus first-party connectors."""
+class _ComposioTool:
+    """Execute a specific Composio tool slug."""
+
+    def __init__(self, *, client: Any, slug: str) -> None:
+        self._client = client
+        self._slug = slug
+
+    def invoke(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        response = self._client.tools.execute(slug=self._slug, arguments=payload)
+        if not response.get("successful", False):
+            error = response.get("error") or "unknown error"
+            raise RuntimeError(f"Composio tool '{self._slug}' execution failed: {error}")
+        return cast(Dict[str, Any], response.get("data", {}))
+
+
+class _LazyComposioToolSet:
+    """Lazily instantiate the Composio client when tools are requested."""
+
+    def __init__(self) -> None:
+        self._client: Any = None
+
+    def _ensure_client(self) -> Any:
+        if self._client is None:
+            try:
+                self._client = Composio()
+            except Exception as exc:
+                if isinstance(exc, composio_exceptions.ApiKeyNotProvidedError):
+                    raise RuntimeError(
+                        "Composio API key must be provided via COMPOSIO_API_KEY to run the delivery stage."
+                    ) from exc
+                raise
+        return self._client
+
+    def get_tool(self, name: str) -> ToolHandle:
+        return _ComposioTool(client=self._ensure_client(), slug=name)
+
+
+class LangGraphValidationOrchestrator:
+    """Run the end-to-end hypothesis validation pipeline using LangGraph."""
 
     def __init__(
         self,
-        toolset: ComposioToolSet | None = None,
+        *,
+        settings: AppSettings | None = None,
+        llm: BaseLLM | None = None,
         yahoo_client: YahooFinanceClient | None = None,
         sec_client: SecFilingsClient | None = None,
         news_client: NewsClient | None = None,
         artifact_store: ArtifactStore | None = None,
-        settings: AppSettings | None = None,
+        toolset: ToolSet | None = None,
     ) -> None:
-        self.toolset = toolset or ComposioToolSet()
         self.settings = settings or get_settings()
-        self.yahoo_client = yahoo_client or YahooFinanceClient()
-        self.sec_client = sec_client or SecFilingsClient(user_agent=self.settings.sec_user_agent)
-        self.news_client = news_client or NewsClient(api_key=self.settings.alpha_vantage_api_key)
-        self.artifact_store = artifact_store or ArtifactStore.from_path(self.settings.artifact_store_path)
-
-    def fetch_market_data(
-        self,
-        request: HypothesisRequest,
-        workflow_id: str | None,
-    ) -> Tuple[Dict[str, Any], EvidenceReference]:
-        tickers = request.entities or ["SPY"]
-        start = request.time_horizon.start
-        end = request.time_horizon.end
-        prices: List[Dict[str, float]] = []
-
-        for ticker in tickers:
-            try:
-                series = self.yahoo_client.fetch_daily_prices(ticker, start, end)
-                prices.extend(series.prices)
-                if workflow_id:
-                    self.artifact_store.write_json(workflow_id, f"{ticker}_prices", {"ticker": ticker, "prices": series.prices})
-            except Exception:  # pragma: no cover - live HTTP request
-                logger.warning("Falling back to Composio market data for ticker=%s", ticker, exc_info=True)
-                prices = []
-                break
-
-        if not prices:
-            payload = {
-                "tickers": tickers,
-                "horizon_days": max((end - start).days, 1),
-            }
-            try:
-                tool = self.toolset.get_tool("polygon_get_snapshot_all_tickers")
-                result = tool.invoke({"tickers": payload["tickers"]})  # type: ignore[call-arg]
-                prices = result.get("closingPrices", []) if isinstance(result, dict) else []
-            except Exception:
-                sizes = len(payload["tickers"])
-                seed = abs(hash(request.hypothesis_text)) % 997
-                base_price = 90 + (seed % 50)
-                prices = [
-                    {
-                        "date": f"fallback-{idx}",
-                        "close": round(base_price * (1 + math.sin(idx / (sizes + 1)) * 0.01), 2),
-                    }
-                    for idx in range(10)
-                ]
-
-        closes = [record.get("close", 0.0) for record in prices if record.get("close") is not None]
-        volatility = _clamp(
-            (fmean(closes[-5:]) / max(closes[0], 1e-6) - 1.0) if closes else 0.12,
-            -1.0,
-            1.0,
-        )
-        dataset = {
-            "tickers": tickers,
-            "prices": prices,
-            "volatility": round(abs(volatility), 4),
-        }
-        uri = self._artifact_uri(workflow_id, "market")
-        evidence = EvidenceReference(type="market_data", uri=uri)
-        return dataset, evidence
-
-    def fetch_filings(
-        self,
-        request: HypothesisRequest,
-        workflow_id: str | None,
-    ) -> Tuple[Dict[str, Any], EvidenceReference]:
-        tickers = request.entities or []
-        try:
-            records = [
-                record.__dict__
-                for ticker in tickers
-                for record in self.sec_client.fetch_recent_filings(ticker)
-            ]
-            if workflow_id and records:
-                self.artifact_store.write_json(workflow_id, "filings", {"records": records})
-        except Exception:  # pragma: no cover - live HTTP request
-            logger.warning("Falling back to synthetic filings", exc_info=True)
-            records = []
-
-        if not records:
-            try:
-                tool = self.toolset.get_tool("sec_filings_get_company_filings")
-                filings = tool.invoke({"companySymbols": tickers})  # type: ignore[call-arg]
-                records = filings if isinstance(filings, list) else []
-            except Exception:
-                records = [
-                    {
-                        "accession": f"synthetic-{idx}",
-                        "filing_type": "10-K",
-                        "filed": "2025-01-01",
-                        "url": "https://example.com/filing",
-                    }
-                    for idx, _ in enumerate(tickers or ["SPY"], start=1)
-                ]
-
-        dataset = {
-            "count": len(records),
-            "records": records,
-            "highlights": [record.get("filing_type", "") for record in records[:3]],
-        }
-        uri = self._artifact_uri(workflow_id, "filings")
-        evidence = EvidenceReference(type="filings", uri=uri)
-        return dataset, evidence
-
-    def fetch_news(
-        self,
-        request: HypothesisRequest,
-        workflow_id: str | None,
-    ) -> Tuple[Dict[str, Any], EvidenceReference]:
-        tickers = request.entities or []
-        try:
-            articles = [article.__dict__ for article in self.news_client.fetch_sentiment(tickers)]
-            if workflow_id and articles:
-                self.artifact_store.write_json(workflow_id, "news", {"articles": articles})
-        except Exception:  # pragma: no cover - live HTTP request
-            logger.warning("Falling back to synthetic news for tickers=%s", tickers, exc_info=True)
-            articles = []
-
-        if not articles:
-            try:
-                tool = self.toolset.get_tool("newsapi_everything")
-                news = tool.invoke({"q": request.hypothesis_text, "pageSize": 5})  # type: ignore[call-arg]
-                raw_articles = news.get("articles", []) if isinstance(news, dict) else []
-                articles = [
-                    {
-                        "title": item.get("title", "synthetic"),
-                        "summary": item.get("description", ""),
-                        "url": item.get("url", ""),
-                        "sentiment": item.get("sentiment", 0.0),
-                    }
-                    for item in raw_articles
-                ]
-            except Exception:
-                seed = abs(hash(request.hypothesis_text)) % 13
-                articles = [
-                    {
-                        "title": f"Synthetic coverage #{idx}",
-                        "summary": "Generated fallback news summary.",
-                        "url": "https://example.com/news",
-                        "sentiment": (-1) ** idx * 0.1 + seed / 1000,
-                    }
-                    for idx in range(1, 4)
-                ]
-
-        avg_sentiment = round(fmean(article.get("sentiment", 0.0) for article in articles) if articles else 0.0, 4)
-        dataset = {
-            "articles": articles,
-            "avg_sentiment": avg_sentiment,
-        }
-        uri = self._artifact_uri(workflow_id, "news")
-        evidence = EvidenceReference(type="news", uri=uri)
-        return dataset, evidence
-
-    def _artifact_uri(self, workflow_id: str | None, suffix: str) -> str:
-        if not workflow_id:
-            return f"artifact://{suffix}"
-        return f"artifact://{workflow_id}/{suffix}"
-
-
-class LangGraphValidationOrchestrator:
-    """Run validation stages using LangGraph state machines backed by Composio data."""
-
-    def __init__(self, router: ComposioRouter | None = None) -> None:
-        self.router = router or ComposioRouter()
-        self._graphs: Dict[str, Any] = {}
-
-    def run_stage(self, stage: str, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        context.setdefault("metadata", {})
-        if stage == "data_ingest":
-            return self._run_data_ingest(request, context)
-        if stage == "entity_resolution":
-            return self._run_entity_resolution(request, context)
-        if stage == "preprocessing":
-            return self._run_preprocessing(request, context)
-        if stage == "analysis":
-            return self._run_analysis(request, context)
-        if stage == "sentiment":
-            return self._run_sentiment(request, context)
-        if stage == "modeling":
-            return self._run_modeling(request, context)
-        if stage == "advanced_modeling":
-            return self._run_advanced_modeling(request, context)
-        if stage == "report_generation":
-            return self._run_report(request, context)
-        raise ValueError(f"Unknown validation stage: {stage}")
-
-    def _run_data_ingest(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        graph = self._ensure_graph("data_ingest", self._build_data_graph)
-        state = graph.invoke({"request": request.model_dump(mode="json"), "context": context})
-        updated_context = state["context"]
-        evidence = [EvidenceReference.model_validate(e) for e in state.get("artifacts", [])]
-        milestone = WorkflowMilestone(
-            name="data_ingest",
-            status=MilestoneStatus.COMPLETED,
-            detail=state.get(
-                "detail",
-                "Fetched market, filings, and news data via public connectors.",
-            ),
-        )
-        return StageExecutionResult(context=updated_context, milestone=milestone, evidence=evidence)
-
-    def _run_preprocessing(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        graph = self._ensure_graph("preprocessing", self._build_preprocess_graph)
-        state = graph.invoke({"request": request.model_dump(mode="json"), "context": context})
-        updated_context = state["context"]
-        milestone = WorkflowMilestone(
-            name="preprocessing",
-            status=MilestoneStatus.COMPLETED,
-            detail=state.get("detail", "Normalized datasets and aligned time indices."),
-        )
-        return StageExecutionResult(context=updated_context, milestone=milestone)
-
-    def _run_entity_resolution(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        working_context = self._clone_context(context)
-        filings = working_context.get("data", {}).get("filings", {}).get("records", [])
-        resolved_entities: List[Dict[str, Any]] = []
-
-        for ticker in request.entities:
-            company_record = next((record for record in filings if record.get("company_name")), None)
-            resolved_entities.append(
-                {
-                    "ticker": ticker,
-                    "cik": self.router.sec_client.get_cik(ticker),
-                    "company_name": company_record.get("company_name") if company_record else None,
-                }
-            )
-
-        working_context.setdefault("data", {})["entities"] = {"resolved": resolved_entities}
-        working_context.setdefault("insights", []).append("Resolved entity metadata using SEC submissions.")
-        milestone = WorkflowMilestone(
-            name="entity_resolution",
-            status=MilestoneStatus.COMPLETED,
-            detail="Entity identifiers mapped to CIKs and company names.",
-        )
-        return StageExecutionResult(context=working_context, milestone=milestone)
-
-    def _run_analysis(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        graph = self._ensure_graph("analysis", self._build_analysis_graph)
-        state = graph.invoke({"request": request.model_dump(mode="json"), "context": context})
-        updated_context = state["context"]
-        milestone = WorkflowMilestone(
-            name="analysis",
-            status=MilestoneStatus.COMPLETED,
-            detail=state.get("detail", "Computed trend, growth, and risk diagnostics."),
-        )
-        return StageExecutionResult(context=updated_context, milestone=milestone)
-
-    def _run_sentiment(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        graph = self._ensure_graph("sentiment", self._build_sentiment_graph)
-        state = graph.invoke({"request": request.model_dump(mode="json"), "context": context})
-        updated_context = state["context"]
-        milestone = WorkflowMilestone(
-            name="sentiment",
-            status=MilestoneStatus.COMPLETED,
-            detail=state.get("detail", "Scored narrative tone across news coverage."),
-        )
-        return StageExecutionResult(context=updated_context, milestone=milestone)
-
-    def _run_modeling(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        graph = self._ensure_graph("modeling", self._build_modeling_graph)
-        state = graph.invoke({"request": request.model_dump(mode="json"), "context": context})
-        updated_context = state["context"]
-        evidence = [EvidenceReference.model_validate(e) for e in state.get("artifacts", [])]
-        milestone = WorkflowMilestone(
-            name="modeling",
-            status=MilestoneStatus.COMPLETED,
-            detail=state.get("detail", "Generated Monte Carlo scenarios and downside cases."),
-        )
-        return StageExecutionResult(context=updated_context, milestone=milestone, evidence=evidence)
-
-    def _run_advanced_modeling(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        working_context = self._clone_context(context)
-        modeling = working_context.get("modeling", {})
-        trend = working_context.get("analysis", {}).get("trend_strength", 0.0)
-        sentiment = working_context.get("sentiment", {}).get("composite", 0.5)
-        volatility = working_context.get("data", {}).get("market", {}).get("volatility", 0.2)
-        workflow_id = working_context.get("metadata", {}).get("workflow_id")
-
-        value_at_risk = _clamp(trend - volatility * 1.2, -1.0, 1.0)
-        expected_shortfall = _clamp(value_at_risk - sentiment * 0.3, -1.0, 1.0)
-        modeling.update(
-            {
-                "value_at_risk": round(value_at_risk, 4),
-                "expected_shortfall": round(expected_shortfall, 4),
-            }
-        )
-        working_context.setdefault("modeling", {}).update(modeling)
-        working_context.setdefault("insights", []).append("Computed VaR and expected shortfall for downside assessment.")
-
-        if workflow_id:
-            payload = {
-                "value_at_risk": modeling["value_at_risk"],
-                "expected_shortfall": modeling["expected_shortfall"],
-                "trend": trend,
-                "sentiment": sentiment,
-                "volatility": volatility,
-            }
-            artifact_path = self.router.artifact_store.write_json(workflow_id, "advanced_modeling", payload)
-            evidence = [
-                EvidenceReference(type="advanced_modeling", uri=f"artifact://{workflow_id}/{artifact_path.name}")
-            ]
+        if llm is not None:
+            self.llm = llm
         else:
-            evidence = []
+            if not self.settings.openai_api_key:
+                raise LLMError("OpenAI API key must be configured for validation pipeline")
+            self.llm = OpenAILLM(api_key=self.settings.openai_api_key, model=self.settings.openai_model)
+        self.yahoo = yahoo_client or YahooFinanceClient()
+        self.sec = sec_client or SecFilingsClient(user_agent=self.settings.sec_user_agent)
+        if not self.settings.alpha_vantage_api_key:
+            raise RuntimeError("Alpha Vantage API key must be configured for news collection")
+        self.news = news_client or NewsClient(api_key=self.settings.alpha_vantage_api_key)
+        self.artifact_store = artifact_store or ArtifactStore.from_path(self.settings.artifact_store_path)
+        self.toolset = toolset or _LazyComposioToolSet()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    def run_stage(self, stage: str, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
+        stage = stage.lower()
+        context = self._clone_context(context)
+        if stage == "plan_generation":
+            return self._run_plan_generation(request, context)
+        if stage == "data_collection":
+            return self._run_data_collection(request, context)
+        if stage == "analysis_planning":
+            return self._run_analysis_planning(request, context)
+        if stage == "hybrid_analysis":
+            return self._run_hybrid_analysis(request, context)
+        if stage == "detailed_analysis":
+            return self._run_detailed_analysis(request, context)
+        if stage == "report_generation":
+            return self._run_report_generation(request, context)
+        if stage == "delivery":
+            return self._run_delivery(request, context)
+        raise ValueError(f"Unknown validation stage '{stage}'")
+
+    # ------------------------------------------------------------------
+    # Stage implementations
+    # ------------------------------------------------------------------
+    def _run_plan_generation(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
+        plan_steps = self.llm.generate_data_plan(request)
+        if not plan_steps:
+            raise RuntimeError("LLM failed to generate data collection plan")
+        context["plan"] = {"steps": plan_steps}
+        context.setdefault("insights", []).append("Generated LLM-backed data acquisition plan.")
+        milestone = WorkflowMilestone(
+            name="plan_generation",
+            status=MilestoneStatus.COMPLETED,
+            detail="Validation plan drafted via OpenAI planner.",
+        )
+        return StageExecutionResult(context=context, milestone=milestone)
+
+    def _run_data_collection(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
+        metadata = context.setdefault("metadata", {})
+        workflow_id = metadata.get("workflow_id")
+        if not workflow_id:
+            raise RuntimeError("Workflow metadata must include a workflow_id before data collection.")
+        if not request.entities:
+            raise RuntimeError("At least one entity ticker is required for data collection.")
+
+        primary_ticker = request.entities[0]
+        market_info = self._collect_market_data(request, workflow_id, primary_ticker)
+        filings_info = self._collect_filings_data(workflow_id, primary_ticker)
+        news_info = self._collect_news_data(workflow_id, request.entities)
+
+        context["data_sources"] = {
+            "market": market_info,
+            "filings": filings_info,
+            "news": news_info,
+        }
+        context.setdefault("insights", []).append("Fetched live market, SEC, and news datasets.")
+
+        evidence = [
+            EvidenceReference(type="market_data", uri=market_info["path"]),
+            EvidenceReference(type="sec_filings", uri=filings_info["path"]),
+            EvidenceReference(type="news_sentiment", uri=news_info["path"]),
+        ]
+        for ref in evidence:
+            self._record_evidence(context, ref)
 
         milestone = WorkflowMilestone(
-            name="advanced_modeling",
+            name="data_collection",
             status=MilestoneStatus.COMPLETED,
-            detail="Advanced risk metrics computed for final validation.",
+            detail="Raw datasets collected from external connectors.",
         )
-        return StageExecutionResult(context=working_context, milestone=milestone, evidence=evidence)
+        return StageExecutionResult(context=context, milestone=milestone, evidence=evidence)
 
-    def _run_report(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        graph = self._ensure_graph("report", self._build_report_graph)
-        state = graph.invoke({"request": request.model_dump(mode="json"), "context": context})
-        updated_context = state["context"]
+    def _run_analysis_planning(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
+        data_sources = context.get("data_sources") or {}
+        if not data_sources:
+            raise RuntimeError("Data sources missing; run data_collection stage first.")
+
+        data_overview = {
+            name: payload.get("summary")
+            for name, payload in data_sources.items()
+        }
+        analysis_plan = self.llm.generate_analysis_plan(request, data_overview)
+        if not analysis_plan:
+            raise RuntimeError("LLM failed to generate analysis plan")
+
+        context["analysis_plan"] = analysis_plan
+        context.setdefault("insights", []).append("LLM produced the quantitative analysis blueprint.")
+        milestone = WorkflowMilestone(
+            name="analysis_planning",
+            status=MilestoneStatus.COMPLETED,
+            detail="Analysis plan constructed from collected dataset summaries.",
+        )
+        return StageExecutionResult(context=context, milestone=milestone)
+
+    def _run_hybrid_analysis(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
+        data_sources = context.get("data_sources") or {}
+        if not data_sources:
+            raise RuntimeError("Data sources missing; run data_collection stage first.")
+        metadata = context.get("metadata") or {}
+        workflow_id = metadata.get("workflow_id")
+        if not workflow_id:
+            raise RuntimeError("Workflow ID missing from context metadata.")
+
+        market_metrics, chart_path = self._compute_market_metrics(workflow_id, data_sources["market"])
+        filings_metrics = self._compute_filings_metrics(data_sources["filings"])
+        news_metrics = self._compute_news_metrics(data_sources["news"])
+
+        analysis_results = {
+            "market": market_metrics,
+            "filings": filings_metrics,
+            "news": news_metrics,
+            "charts": [chart_path],
+        }
+        metrics_path = self.artifact_store.write_json(workflow_id, "analysis_metrics", analysis_results).resolve().as_uri()
+        analysis_results["metrics_path"] = metrics_path
+        context["analysis_results"] = analysis_results
+        context.setdefault("insights", []).append("Hybrid quantitative and qualitative analytics computed.")
+
+        evidence = [
+            EvidenceReference(type="analysis_metrics", uri=metrics_path),
+            EvidenceReference(type="chart", uri=chart_path),
+        ]
+        for ref in evidence:
+            self._record_evidence(context, ref)
+
+        milestone = WorkflowMilestone(
+            name="hybrid_analysis",
+            status=MilestoneStatus.COMPLETED,
+            detail="Quantitative diagnostics executed with chart artifacts persisted.",
+        )
+        return StageExecutionResult(context=context, milestone=milestone, evidence=evidence)
+
+    def _run_detailed_analysis(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
+        analysis_results = context.get("analysis_results")
+        if not analysis_results:
+            raise RuntimeError("Analysis results missing; run hybrid_analysis stage first.")
+
+        narrative = self.llm.generate_detailed_analysis(request, analysis_results)
+        if not narrative:
+            raise RuntimeError("LLM failed to generate detailed analysis narrative")
+
+        detailed_analysis = {
+            "narrative": narrative,
+            "metrics": analysis_results,
+        }
+        context["detailed_analysis"] = detailed_analysis
+        context.setdefault("insights", []).append("LLM synthesized detailed narrative from computed metrics.")
+
+        milestone = WorkflowMilestone(
+            name="detailed_analysis",
+            status=MilestoneStatus.COMPLETED,
+            detail="Narrative synthesis produced from hybrid analytics.",
+        )
+        return StageExecutionResult(context=context, milestone=milestone)
+
+    def _run_report_generation(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
+        metadata = context.get("metadata") or {}
+        workflow_id = metadata.get("workflow_id")
+        if not workflow_id:
+            raise RuntimeError("Workflow ID missing from context metadata.")
+        detailed = context.get("detailed_analysis")
+        if not detailed:
+            raise RuntimeError("Detailed analysis missing; run detailed_analysis stage first.")
+        analysis_results = detailed.get("metrics") or {}
+
+        report_payload = self.llm.generate_report(
+            request=request,
+            metrics_overview=analysis_results,
+            analysis_summary=detailed["narrative"],
+            artifact_paths=analysis_results.get("charts", []),
+        )
+        if not isinstance(report_payload, dict):
+            raise RuntimeError("LLM report payload must be a dictionary")
+
+        plan_steps = context.get("plan", {}).get("steps", [])
+        report_pdf = self._render_report_pdf(
+            workflow_id=workflow_id,
+            request=request,
+            plan_steps=plan_steps,
+            analysis_results=analysis_results,
+            detailed_analysis=detailed,
+            report_payload=report_payload,
+        )
+
+        context["report"] = {
+            "payload": report_payload,
+            "pdf_path": report_pdf,
+        }
+        pdf_evidence = EvidenceReference(type="report_document", uri=report_pdf)
+        self._record_evidence(context, pdf_evidence)
+
+        score, confidence = self._score_validation(analysis_results)
         summary = ValidationSummary(
-            score=round(state["score"], 4),
-            conclusion=state["conclusion"],
-            confidence=round(state["confidence"], 4),
-            evidence=[EvidenceReference.model_validate(e) for e in updated_context.get("evidence", [])],
+            score=score,
+            conclusion=self._determine_conclusion(score),
+            confidence=confidence,
+            evidence=[EvidenceReference.model_validate(ev) for ev in context.get("evidence", [])],
             current_stage="report_generation",
             milestones=[],
         )
+
         milestone = WorkflowMilestone(
             name="report_generation",
             status=MilestoneStatus.COMPLETED,
-            detail=state.get("detail", "Assembled validation summary and audit trail."),
+            detail="Investment memo compiled with quantitative backing.",
         )
-        return StageExecutionResult(
-            context=updated_context,
-            milestone=milestone,
-            summary=summary,
-            evidence=[EvidenceReference.model_validate(e) for e in updated_context.get("evidence", [])],
+        return StageExecutionResult(context=context, milestone=milestone, evidence=[pdf_evidence], summary=summary)
+
+    def _run_delivery(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
+        report = context.get("report") or {}
+        pdf_path = report.get("pdf_path")
+        payload = report.get("payload") or {}
+        if not pdf_path or not payload:
+            raise RuntimeError("Report assets missing; run report_generation stage first.")
+
+        recipient = self.settings.notification_email
+        if not recipient:
+            raise RuntimeError("notification_email must be configured for delivery stage")
+
+        self._send_report_via_tool(
+            recipient=recipient,
+            request=request,
+            pdf_uri=pdf_path,
+            report_payload=payload,
         )
+        context.setdefault("insights", []).append(f"Report delivered to {recipient} via Composio tool router.")
 
-    def _ensure_graph(self, key: str, builder) -> Any:
-        if key not in self._graphs:
-            self._graphs[key] = builder()
-        return self._graphs[key]
+        milestone = WorkflowMilestone(
+            name="delivery",
+            status=MilestoneStatus.COMPLETED,
+            detail=f"Report emailed to {recipient}.",
+        )
+        return StageExecutionResult(context=context, milestone=milestone)
 
-    def _build_data_graph(self):
-        graph = StateGraph(dict)
+    # ------------------------------------------------------------------
+    # Data collection helpers
+    # ------------------------------------------------------------------
+    def _collect_market_data(self, request: HypothesisRequest, workflow_id: str, ticker: str) -> Dict[str, Any]:
+        series = self.yahoo.fetch_daily_prices(ticker, request.time_horizon.start, request.time_horizon.end).prices
+        payload = {"ticker": ticker, "series": series}
+        path = self.artifact_store.write_json(workflow_id, "market_data", payload).resolve().as_uri()
+        summary = {
+            "ticker": ticker,
+            "observations": len(series),
+            "start": series[0]["date"] if series else None,
+            "end": series[-1]["date"] if series else None,
+        }
+        return {"path": path, "summary": summary}
 
-        def _market(state: Dict[str, Any]) -> Dict[str, Any]:
-            request = HypothesisRequest.model_validate(state["request"])
-            context = self._clone_context(state.get("context"))
-            workflow_id = context.get("metadata", {}).get("workflow_id")
-            dataset, evidence = self.router.fetch_market_data(request, workflow_id)
-            context = self._clone_context(state.get("context"))
-            context.setdefault("data", {})["market"] = dataset
-            context.setdefault("evidence", []).append(evidence.model_dump(mode="json"))
-            context.setdefault("insights", []).append("Market data retrieved via Yahoo Finance connector.")
-            state["context"] = context
-            state.setdefault("artifacts", []).append(evidence.model_dump(mode="json"))
-            return state
+    def _collect_filings_data(self, workflow_id: str, ticker: str) -> Dict[str, Any]:
+        records = [self._serialize_record(record) for record in self.sec.fetch_recent_filings(ticker)]
+        payload = {"ticker": ticker, "records": records}
+        path = self.artifact_store.write_json(workflow_id, "sec_filings", payload).resolve().as_uri()
+        summary = {
+            "ticker": ticker,
+            "count": len(records),
+            "forms": sorted({record.get("filing_type") for record in records if record.get("filing_type")}),
+        }
+        return {"path": path, "summary": summary}
 
-        def _filings(state: Dict[str, Any]) -> Dict[str, Any]:
-            request = HypothesisRequest.model_validate(state["request"])
-            context = self._clone_context(state.get("context"))
-            workflow_id = context.get("metadata", {}).get("workflow_id")
-            dataset, evidence = self.router.fetch_filings(request, workflow_id)
-            context = self._clone_context(state.get("context"))
-            context.setdefault("data", {})["filings"] = dataset
-            context.setdefault("evidence", []).append(evidence.model_dump(mode="json"))
-            context.setdefault("insights", []).append("SEC filings summarised from EDGAR submissions.")
-            state["context"] = context
-            state.setdefault("artifacts", []).append(evidence.model_dump(mode="json"))
-            return state
+    def _collect_news_data(self, workflow_id: str, tickers: List[str]) -> Dict[str, Any]:
+        articles = [self._serialize_record(article) for article in self.news.fetch_sentiment(tickers)]
+        payload = {"tickers": tickers, "articles": articles}
+        path = self.artifact_store.write_json(workflow_id, "news_sentiment", payload).resolve().as_uri()
+        summary = {
+            "tickers": tickers,
+            "article_count": len(articles),
+            "avg_sentiment": round(mean([article.get("sentiment", 0.0) for article in articles]), 4) if articles else 0.0,
+        }
+        return {"path": path, "summary": summary}
 
-        def _news(state: Dict[str, Any]) -> Dict[str, Any]:
-            request = HypothesisRequest.model_validate(state["request"])
-            context = self._clone_context(state.get("context"))
-            workflow_id = context.get("metadata", {}).get("workflow_id")
-            dataset, evidence = self.router.fetch_news(request, workflow_id)
-            context = self._clone_context(state.get("context"))
-            context.setdefault("data", {})["news"] = dataset
-            context.setdefault("evidence", []).append(evidence.model_dump(mode="json"))
-            context.setdefault("insights", []).append("Aggregated recent coverage for sentiment analysis.")
-            state["context"] = context
-            state.setdefault("artifacts", []).append(evidence.model_dump(mode="json"))
-            state["detail"] = "Market, filings, and news datasets prepared."
-            return state
+    # ------------------------------------------------------------------
+    # Analysis helpers
+    # ------------------------------------------------------------------
+    def _compute_market_metrics(self, workflow_id: str, market_info: Dict[str, Any]) -> tuple[Dict[str, float], str]:
+        payload = self._load_json(market_info["path"])
+        series = payload.get("series", [])
+        closes = [float(item["close"]) for item in series if item.get("close") is not None]
+        if len(closes) < 2:
+            raise RuntimeError("Insufficient market data for hybrid analysis.")
 
-        graph.add_node("market", _market)
-        graph.add_node("filings", _filings)
-        graph.add_node("news", _news)
-        graph.set_entry_point("market")
-        graph.add_edge("market", "filings")
-        graph.add_edge("filings", "news")
-        graph.add_edge("news", END)
-        return graph.compile()
+        returns = [(closes[idx] / closes[idx - 1]) - 1 for idx in range(1, len(closes))]
+        volatility = pstdev(returns) if len(returns) > 1 else 0.0
+        avg_return = mean(returns)
+        trading_days = len(closes)
+        years = trading_days / 252 if trading_days else 1.0
+        cagr = (closes[-1] / closes[0]) ** (1 / years) - 1 if years > 0 else 0.0
 
-    def _build_preprocess_graph(self):
-        graph = StateGraph(dict)
+        metrics = {
+            "start_price": round(closes[0], 4),
+            "end_price": round(closes[-1], 4),
+            "cagr": round(cagr, 4),
+            "volatility": round(volatility, 4),
+            "avg_return": round(avg_return, 4),
+        }
+        chart_path = self._generate_price_chart(workflow_id, payload.get("ticker", ""), series)
+        return metrics, chart_path
 
-        def _normalize(state: Dict[str, Any]) -> Dict[str, Any]:
-            context = self._clone_context(state.get("context"))
-            market = context.get("data", {}).get("market", {})
-            base = market.get("prices", [100])
-            normalized = [round(price / max(base[0], 1e-6), 4) for price in base]
-            context.setdefault("normalized", {})["market_indexed"] = normalized
-            context.setdefault("insights", []).append("Normalized price series to base period index.")
-            state["context"] = context
-            return state
+    def _compute_filings_metrics(self, filings_info: Dict[str, Any]) -> Dict[str, Any]:
+        payload = self._load_json(filings_info["path"])
+        records = payload.get("records", [])
+        if not records:
+            raise RuntimeError("SEC filings dataset is empty.")
+        latest = sorted(records, key=lambda item: item.get("filed", ""), reverse=True)
+        return {
+            "filing_count": len(records),
+            "recent_forms": [record.get("filing_type") for record in latest[:5]],
+            "latest_filed": latest[0].get("filed"),
+        }
 
-        def _align(state: Dict[str, Any]) -> Dict[str, Any]:
-            context = self._clone_context(state.get("context"))
-            filings = context.get("data", {}).get("filings", {})
-            context.setdefault("normalized", {})["filings_count"] = filings.get("count", 0)
-            context.setdefault("insights", []).append("Preprocessing complete across numeric and textual feeds.")
-            state["context"] = context
-            state["detail"] = "Datasets normalized and enriched with derived features."
-            return state
+    def _compute_news_metrics(self, news_info: Dict[str, Any]) -> Dict[str, Any]:
+        payload = self._load_json(news_info["path"])
+        articles = payload.get("articles", [])
+        if not articles:
+            raise RuntimeError("News sentiment dataset is empty.")
+        sentiments = [float(article.get("sentiment", 0.0)) for article in articles]
+        return {
+            "article_count": len(articles),
+            "avg_sentiment": round(mean(sentiments), 4),
+            "sentiment_range": [round(min(sentiments), 4), round(max(sentiments), 4)],
+        }
 
-        graph.add_node("normalize", _normalize)
-        graph.add_node("align", _align)
-        graph.set_entry_point("normalize")
-        graph.add_edge("normalize", "align")
-        graph.add_edge("align", END)
-        return graph.compile()
+    # ------------------------------------------------------------------
+    # Rendering and delivery helpers
+    # ------------------------------------------------------------------
+    def _generate_price_chart(self, workflow_id: str, ticker: str, series: List[Dict[str, Any]]) -> str:
+        dates = [row.get("date") for row in series]
+        closes = [float(row.get("close", 0.0)) for row in series]
+        if plt is None:
+            placeholder = {
+                "ticker": ticker,
+                "series": [{"date": d, "close": c} for d, c in zip(dates, closes)],
+                "note": "Matplotlib unavailable; generated JSON artifact instead of chart image.",
+            }
+            return self.artifact_store.write_json(workflow_id, "price_trend", placeholder).resolve().as_uri()
 
-    def _build_analysis_graph(self):
-        graph = StateGraph(dict)
+        fig, ax = plt.subplots(figsize=(8, 3))
+        ax.plot(dates, closes, color="#0B69FF", linewidth=1.6)
+        ax.set_title(f"{ticker} Closing Prices", fontsize=12)
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Close")
+        ax.grid(True, linewidth=0.3, alpha=0.5)
+        fig.autofmt_xdate()
+        buffer = io.BytesIO()
+        fig.savefig(buffer, format="png", bbox_inches="tight")
+        plt.close(fig)
+        chart_path = self.artifact_store.write_bytes(workflow_id, "price_trend.png", buffer.getvalue()).resolve().as_uri()
+        buffer.close()
+        return chart_path
 
-        def _trend(state: Dict[str, Any]) -> Dict[str, Any]:
-            context = self._clone_context(state.get("context"))
-            normalized = context.get("normalized", {}).get("market_indexed", [1])
-            trend = normalized[-1] - normalized[0] if len(normalized) > 1 else 0.0
-            context.setdefault("analysis", {})["trend_strength"] = round(trend, 4)
-            context.setdefault("insights", []).append("Computed trend strength from normalized prices.")
-            state["context"] = context
-            return state
+    def _render_report_pdf(
+        self,
+        *,
+        workflow_id: str,
+        request: HypothesisRequest,
+        plan_steps: List[str],
+        analysis_results: Dict[str, Any],
+        detailed_analysis: Dict[str, Any],
+        report_payload: Dict[str, Any],
+    ) -> str:
+        if canvas is None or LETTER is None:
+            placeholder_content = {
+                "workflow_id": workflow_id,
+                "hypothesis_text": request.hypothesis_text,
+                "plan_steps": plan_steps,
+                "analysis_results": analysis_results,
+                "detailed_analysis": detailed_analysis,
+                "report_payload": report_payload,
+                "note": "ReportLab unavailable; generated JSON artifact instead of PDF report.",
+            }
+            return self.artifact_store.write_json(workflow_id, "validation_report", placeholder_content).resolve().as_uri()
 
-        def _risk(state: Dict[str, Any]) -> Dict[str, Any]:
-            context = self._clone_context(state.get("context"))
-            volatility = context.get("data", {}).get("market", {}).get("volatility", 0.15)
-            filings_count = context.get("normalized", {}).get("filings_count", 1)
-            risk_index = _clamp(volatility * 0.6 + (1 / max(filings_count, 1)) * 0.1, 0.0, 1.0)
-            context.setdefault("analysis", {})["risk_index"] = round(risk_index, 4)
-            context.setdefault("insights", []).append("Risk index estimated from volatility and filing cadence.")
-            state["context"] = context
-            state["detail"] = "Trend and risk diagnostics computed."
-            return state
+        buffer = io.BytesIO()
+        pdf = canvas.Canvas(buffer, pagesize=LETTER)
+        pdf.setTitle(f"RAVEN Validation Report - {workflow_id}")
 
-        graph.add_node("trend", _trend)
-        graph.add_node("risk", _risk)
-        graph.set_entry_point("trend")
-        graph.add_edge("trend", "risk")
-        graph.add_edge("risk", END)
-        return graph.compile()
+        pdf.setFont("Helvetica-Bold", 14)
+        pdf.drawString(72, 720, "RAVEN Hypothesis Validation Report")
+        pdf.setFont("Helvetica", 10)
+        pdf.drawString(72, 702, f"Workflow: {workflow_id}")
+        pdf.drawString(72, 688, f"Hypothesis: {request.hypothesis_text}")
 
-    def _build_sentiment_graph(self):
-        graph = StateGraph(dict)
+        pdf.setFont("Helvetica-Bold", 12)
+        pdf.drawString(72, 660, "Plan Overview")
+        text_obj = pdf.beginText(72, 644)
+        text_obj.setFont("Helvetica", 10)
+        for idx, step in enumerate(plan_steps or [], start=1):
+            text_obj.textLine(f"{idx}. {step}")
+        if not plan_steps:
+            text_obj.textLine("Plan steps unavailable")
+        pdf.drawText(text_obj)
 
-        def _aggregate(state: Dict[str, Any]) -> Dict[str, Any]:
-            context = self._clone_context(state.get("context"))
-            news = context.get("data", {}).get("news", {})
-            score = news.get("avg_sentiment", 0.0)
-            context.setdefault("sentiment", {})["composite"] = round(_clamp(score * 0.5 + 0.5, 0.0, 1.0), 4)
-            context.setdefault("insights", []).append("Derived composite sentiment across news sources.")
-            state["context"] = context
-            return state
+        pdf.setFont("Helvetica-Bold", 12)
+        pdf.drawString(72, 612, "Key Metrics")
+        text_obj = pdf.beginText(72, 596)
+        text_obj.setFont("Helvetica", 10)
+        metrics_json = json.dumps(analysis_results, indent=2)
+        for line in metrics_json.splitlines():
+            text_obj.textLine(line)
+        pdf.drawText(text_obj)
 
-        def _volatility_bridge(state: Dict[str, Any]) -> Dict[str, Any]:
-            context = self._clone_context(state.get("context"))
-            volatility = context.get("data", {}).get("market", {}).get("volatility", 0.1)
-            sentiment = context.get("sentiment", {}).get("composite", 0.5)
-            smooth = round(_clamp(abs(sentiment - volatility / 2), 0.0, 1.0), 4)
-            context.setdefault("sentiment", {})["stability"] = smooth
-            context.setdefault("insights", []).append("Sentiment stability blended with market volatility.")
-            state["context"] = context
-            state["detail"] = "Sentiment signals prepared for modeling inputs."
-            return state
+        pdf.setFont("Helvetica-Bold", 12)
+        pdf.drawString(72, 468, "Narrative Summary")
+        text_obj = pdf.beginText(72, 452)
+        text_obj.setFont("Helvetica", 10)
+        narrative = detailed_analysis.get("narrative", "Narrative unavailable.")
+        for line in narrative.splitlines():
+            text_obj.textLine(line)
+        pdf.drawText(text_obj)
 
-        graph.add_node("aggregate", _aggregate)
-        graph.add_node("bridge", _volatility_bridge)
-        graph.set_entry_point("aggregate")
-        graph.add_edge("aggregate", "bridge")
-        graph.add_edge("bridge", END)
-        return graph.compile()
-
-    def _build_modeling_graph(self):
-        graph = StateGraph(dict)
-
-        def _monte_carlo(state: Dict[str, Any]) -> Dict[str, Any]:
-            context = self._clone_context(state.get("context"))
-            sentiment = context.get("sentiment", {}).get("composite", 0.5)
-            trend = context.get("analysis", {}).get("trend_strength", 0.0)
-            mean_return = trend * 0.3 + sentiment * 0.4
-            downside = _clamp(0.3 - sentiment * 0.2, 0.05, 0.5)
-            context.setdefault("modeling", {})["mean_return"] = round(mean_return, 4)
-            context.setdefault("modeling", {})["downside_risk"] = round(downside, 4)
-            evidence = EvidenceReference(type="simulation", uri="https://data.raven.local/simulations")
-            context.setdefault("evidence", []).append(evidence.model_dump(mode="json"))
-            state.setdefault("artifacts", []).append(evidence.model_dump(mode="json"))
-            state["context"] = context
-            return state
-
-        def _scenario(state: Dict[str, Any]) -> Dict[str, Any]:
-            context = self._clone_context(state.get("context"))
-            mean = context.get("modeling", {}).get("mean_return", 0.1)
-            downside = context.get("modeling", {}).get("downside_risk", 0.2)
-            spread = round(_clamp(mean - downside, -0.2, 0.4), 4)
-            context.setdefault("modeling", {})["scenario_spread"] = spread
-            context.setdefault("insights", []).append("Modeled upside/downside scenarios for validation scoring.")
-            state["context"] = context
-            state["detail"] = "Scenario modeling complete with probabilistic outcomes."
-            return state
-
-        graph.add_node("monte_carlo", _monte_carlo)
-        graph.add_node("scenario", _scenario)
-        graph.set_entry_point("monte_carlo")
-        graph.add_edge("monte_carlo", "scenario")
-        graph.add_edge("scenario", END)
-        return graph.compile()
-
-    def _build_report_graph(self):
-        graph = StateGraph(dict)
-
-        def _score(state: Dict[str, Any]) -> Dict[str, Any]:
-            request = HypothesisRequest.model_validate(state["request"])
-            context = self._clone_context(state.get("context"))
-            analysis = context.get("analysis", {})
-            modeling = context.get("modeling", {})
-            sentiment = context.get("sentiment", {})
-            risk_appetite_factor = {
-                "low": -0.15,
-                "moderate": 0.0,
-                "high": 0.1,
-            }[request.risk_appetite.value]
-            score_components = [analysis.get("trend_strength", 0.0) * 0.4, modeling.get("mean_return", 0.0) * 0.4, sentiment.get("composite", 0.5) * 0.2, risk_appetite_factor]
-            score = _clamp(0.5 + sum(score_components))
-            confidence = _clamp(0.45 + modeling.get("scenario_spread", 0.0) * 0.3 - analysis.get("risk_index", 0.1) * 0.2)
-            state["score"] = score
-            state["confidence"] = confidence
-            state["context"] = context
-            return state
-
-        def _conclude(state: Dict[str, Any]) -> Dict[str, Any]:
-            context = self._clone_context(state.get("context"))
-            score = state.get("score", 0.5)
-            if score >= 0.65:
-                conclusion = "Supported"
-            elif score >= 0.5:
-                conclusion = "Partially supported"
+        pdf.setFont("Helvetica-Bold", 12)
+        pdf.drawString(72, 360, "LLM Report Highlights")
+        text_obj = pdf.beginText(72, 344)
+        text_obj.setFont("Helvetica", 10)
+        for key in ("executive_summary", "key_findings", "risks", "next_steps"):
+            value = report_payload.get(key)
+            if value is None:
+                continue
+            heading = key.replace("_", " ").title()
+            text_obj.textLine(f"{heading}:")
+            if isinstance(value, list):
+                for item in value:
+                    text_obj.textLine(f"  - {item}")
             else:
-                conclusion = "Not supported"
-            state["conclusion"] = conclusion
-            context.setdefault("insights", []).append(f"Final validation conclusion: {conclusion}.")
-            context.setdefault("context_notes", [])
-            state["context"] = context
-            state["detail"] = "Validation summary assembled with LangGraph pipeline artifacts."
-            return state
+                text_obj.textLine(f"  {value}")
+            text_obj.textLine("")
+        pdf.drawText(text_obj)
 
-        graph.add_node("score", _score)
-        graph.add_node("conclude", _conclude)
-        graph.set_entry_point("score")
-        graph.add_edge("score", "conclude")
-        graph.add_edge("conclude", END)
-        return graph.compile()
+        pdf.showPage()
+        pdf.save()
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        pdf_path = self.artifact_store.write_bytes(workflow_id, "validation_report.pdf", pdf_bytes).resolve().as_uri()
+        return pdf_path
+
+    def _send_report_via_tool(
+        self,
+        *,
+        recipient: str,
+        request: HypothesisRequest,
+        pdf_uri: str,
+        report_payload: Dict[str, Any],
+    ) -> None:
+        tool = self.toolset.get_tool("gmail_send_email")
+        subject = f"RAVEN Validation Report: {request.hypothesis_text[:60]}"
+        key_findings = report_payload.get("key_findings", [])
+        body_lines = [
+            "Hello,",
+            "",
+            "Please find the attached validation report generated by RAVEN.",
+        ]
+        if key_findings:
+            body_lines.append("")
+            body_lines.append("Key Findings:")
+            for finding in key_findings[:5]:
+                body_lines.append(f"- {finding}")
+        body_lines.append("")
+        body_lines.append("Regards,\nRAVEN Validation Platform")
+
+        attachment_path = pdf_uri.replace("file://", "")
+        tool.invoke(
+            {
+                "to": recipient,
+                "subject": subject,
+                "body": "\n".join(body_lines),
+                "attachments": [attachment_path],
+            }
+        )
+
+    # ------------------------------------------------------------------
+    # Utility helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _serialize_record(record: Any) -> Dict[str, Any]:
+        if isinstance(record, dict):
+            return dict(record)
+        if hasattr(record, "model_dump"):
+            return cast(Dict[str, Any], record.model_dump())
+        if is_dataclass(record):
+            return cast(Dict[str, Any], asdict(record))
+        if hasattr(record, "__dict__"):
+            return dict(vars(record))
+        raise TypeError(f"Unsupported record type for serialization: {type(record)!r}")
+
+    def _load_json(self, uri: str) -> Dict[str, Any]:
+        path = Path(uri.replace("file://", ""))
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def _score_validation(self, analysis_results: Dict[str, Any]) -> tuple[float, float]:
+        market = analysis_results.get("market", {})
+        news = analysis_results.get("news", {})
+        filings = analysis_results.get("filings", {})
+        score = 0.5
+        score += float(market.get("cagr", 0.0)) * 0.4
+        score += float(news.get("avg_sentiment", 0.0)) * 0.2
+        score -= float(market.get("volatility", 0.0)) * 0.3
+        score += min(float(filings.get("filing_count", 0)), 10.0) / 100
+        confidence = 0.6
+        confidence -= float(market.get("volatility", 0.0)) * 0.1
+        confidence += float(news.get("avg_sentiment", 0.0)) * 0.2
+        confidence += min(float(filings.get("filing_count", 0)), 5.0) / 50
+        return round(_clamp(score, 0.0, 1.0), 4), round(_clamp(confidence, 0.0, 1.0), 4)
+
+    @staticmethod
+    def _determine_conclusion(score: float) -> str:
+        if score >= 0.7:
+            return "Supported"
+        if score >= 0.5:
+            return "Partially supported"
+        return "Not supported"
+
+    def _record_evidence(self, context: StageContext, evidence: EvidenceReference) -> None:
+        context.setdefault("evidence", []).append(evidence.model_dump(mode="json"))
+        context.setdefault("artifacts", []).append(evidence.model_dump(mode="json"))
 
     @staticmethod
     def _clone_context(context: StageContext | None) -> StageContext:
@@ -643,7 +652,7 @@ class LangGraphValidationOrchestrator:
             if isinstance(value, dict):
                 cloned[key] = dict(value)
             elif isinstance(value, list):
-                cloned[key] = list(value)
+                cloned[key] = [dict(item) if isinstance(item, dict) else item for item in value]
             else:
                 cloned[key] = value
         return cloned

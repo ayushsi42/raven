@@ -20,8 +20,11 @@ class AppSettings(BaseSettings):
     artifact_store_path: str = "./data/artifacts"
     alpha_vantage_api_key: str = "demo"
     sec_user_agent: str = "RAVEN/0.1 (support@example.com)"
+    notification_email: str | None = None
     api_key: str | None = None
     enable_prometheus: bool = True
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
 
     model_config = SettingsConfigDict(env_prefix="RAVEN_", case_sensitive=False)
 

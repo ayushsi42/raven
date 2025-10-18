@@ -22,22 +22,21 @@ from hypothesis_agent.repositories.hypothesis_repository import HypothesisRecord
 
 def _make_validation_summary() -> ValidationSummary:
     milestones = [
-        WorkflowMilestone(name="data_ingest", status=MilestoneStatus.COMPLETED, detail="Data collected."),
-        WorkflowMilestone(name="entity_resolution", status=MilestoneStatus.COMPLETED, detail="Entities resolved."),
-        WorkflowMilestone(name="preprocessing", status=MilestoneStatus.COMPLETED, detail="Data normalized."),
-        WorkflowMilestone(name="analysis", status=MilestoneStatus.COMPLETED, detail="Diagnostics computed."),
-        WorkflowMilestone(name="sentiment", status=MilestoneStatus.COMPLETED, detail="Sentiment scored."),
-        WorkflowMilestone(name="modeling", status=MilestoneStatus.COMPLETED, detail="Scenarios modeled."),
-        WorkflowMilestone(name="advanced_modeling", status=MilestoneStatus.COMPLETED, detail="Advanced metrics."),
-        WorkflowMilestone(name="human_review", status=MilestoneStatus.COMPLETED, detail="Review skipped."),
+        WorkflowMilestone(name="plan_generation", status=MilestoneStatus.COMPLETED, detail="Plan generated."),
+        WorkflowMilestone(name="data_collection", status=MilestoneStatus.COMPLETED, detail="Data collected."),
+        WorkflowMilestone(name="analysis_planning", status=MilestoneStatus.COMPLETED, detail="Analysis plan drafted."),
+        WorkflowMilestone(name="hybrid_analysis", status=MilestoneStatus.COMPLETED, detail="Hybrid analytics complete."),
+        WorkflowMilestone(name="detailed_analysis", status=MilestoneStatus.COMPLETED, detail="Narrative synthesized."),
         WorkflowMilestone(name="report_generation", status=MilestoneStatus.COMPLETED, detail="Report compiled."),
+        WorkflowMilestone(name="human_review", status=MilestoneStatus.COMPLETED, detail="Review skipped."),
+        WorkflowMilestone(name="delivery", status=MilestoneStatus.COMPLETED, detail="Delivered to stakeholders."),
     ]
     return ValidationSummary(
         score=0.61,
         conclusion="Partially supported",
         confidence=0.57,
         evidence=[],
-        current_stage="report_generation",
+        current_stage="delivery",
         milestones=milestones,
     )
 

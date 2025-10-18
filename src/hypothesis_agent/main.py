@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, Request
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from starlette.responses import Response
+
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from hypothesis_agent.api.router import api_router
 from hypothesis_agent.api.ui import ui_router

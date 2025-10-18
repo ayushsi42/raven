@@ -81,8 +81,8 @@ class HypothesisResponse(BaseModel):
     """Outbound contract returned to the client after submission."""
 
     hypothesis_id: UUID = Field(default_factory=uuid4, description="Server-assigned hypothesis identifier.")
-    workflow_id: str = Field(..., description="Temporal workflow identifier handling the validation.")
-    workflow_run_id: str = Field(..., description="Temporal run identifier for tracking retries and history.")
+    workflow_id: str = Field(..., description="Identifier for the validation workflow instance.")
+    workflow_run_id: str = Field(..., description="Run identifier for tracking workflow executions.")
     status: str = Field(..., description="Submission status for the hypothesis workflow.")
     validation: ValidationSummary = Field(..., description="Summary of the validation state.")
 
@@ -90,7 +90,7 @@ class HypothesisResponse(BaseModel):
 class HypothesisStatusResponse(HypothesisResponse):
     """Extended response including live workflow execution state."""
 
-    workflow_status: str = Field(..., description="Temporal workflow execution status.")
+    workflow_status: str = Field(..., description="Current workflow execution status.")
     workflow_history_length: int | None = Field(
         default=None,
         description="Number of events in the workflow history if available.",

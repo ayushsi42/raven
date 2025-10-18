@@ -1,1 +1,1 @@
-"""Temporal worker bootstrap modules."""
+"""Background worker modules retained for backward compatibility."""

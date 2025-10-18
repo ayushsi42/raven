@@ -1,9 +1,7 @@
-"""Temporal activities orchestrating LangGraph + Composio validation stages."""
+"""Legacy activity wrappers now delegating directly to the LangGraph pipeline."""
 from __future__ import annotations
 
 from typing import Dict, List
-
-from temporalio import activity
 
 from hypothesis_agent.models.hypothesis import (
     HypothesisRequest,
@@ -51,56 +49,36 @@ def _load_orchestrator_result(stage: str, payload: Dict) -> Dict:
     return _serialize_stage_result(result)
 
 
-@activity.defn(name="run_data_ingestion")
-async def run_data_ingestion(payload: Dict) -> Dict:
-    """Collect raw datasets using public-market connectors."""
+async def run_plan_generation(payload: Dict) -> Dict:
+    """Generate the LLM-powered data acquisition plan."""
 
-    return _load_orchestrator_result("data_ingest", payload)
-
-
-@activity.defn(name="run_entity_resolution")
-async def run_entity_resolution(payload: Dict) -> Dict:
-    """Resolve entity metadata such as CIK mappings."""
-
-    return _load_orchestrator_result("entity_resolution", payload)
+    return _load_orchestrator_result("plan_generation", payload)
 
 
-@activity.defn(name="run_preprocessing")
-async def run_preprocessing(payload: Dict) -> Dict:
-    """Normalize raw datasets for downstream analytics."""
+async def run_data_collection(payload: Dict) -> Dict:
+    """Collect live datasets using finance and news connectors."""
 
-    return _load_orchestrator_result("preprocessing", payload)
-
-
-@activity.defn(name="run_analysis")
-async def run_analysis(payload: Dict) -> Dict:
-    """Execute financial diagnostics on normalized data."""
-
-    return _load_orchestrator_result("analysis", payload)
+    return _load_orchestrator_result("data_collection", payload)
 
 
-@activity.defn(name="run_sentiment")
-async def run_sentiment(payload: Dict) -> Dict:
-    """Score qualitative sentiment signals."""
+async def run_analysis_planning(payload: Dict) -> Dict:
+    """Draft the quantitative analysis plan from collected data summaries."""
 
-    return _load_orchestrator_result("sentiment", payload)
-
-
-@activity.defn(name="run_modeling")
-async def run_modeling(payload: Dict) -> Dict:
-    """Generate probabilistic modeling scenarios."""
-
-    return _load_orchestrator_result("modeling", payload)
+    return _load_orchestrator_result("analysis_planning", payload)
 
 
-@activity.defn(name="run_advanced_modeling")
-async def run_advanced_modeling(payload: Dict) -> Dict:
-    """Compute advanced risk analytics such as VaR."""
+async def run_hybrid_analysis(payload: Dict) -> Dict:
+    """Execute numerical analytics and persist derived artifacts."""
 
-    return _load_orchestrator_result("advanced_modeling", payload)
+    return _load_orchestrator_result("hybrid_analysis", payload)
 
 
-@activity.defn(name="await_human_review")
+async def run_detailed_analysis(payload: Dict) -> Dict:
+    """Produce the LLM-backed narrative explaining analysis outputs."""
+
+    return _load_orchestrator_result("detailed_analysis", payload)
+
+
 async def await_human_review(payload: Dict) -> Dict:
     """Pause workflow execution pending human approval when required."""
 
@@ -141,9 +119,8 @@ async def await_human_review(payload: Dict) -> Dict:
     return _serialize_stage_result(result)
 
 
-@activity.defn(name="perform_validation")
-async def perform_validation(payload: Dict) -> Dict:
-    """Assemble the final validation report after all upstream stages complete."""
+async def run_report_generation(payload: Dict) -> Dict:
+    """Assemble the final validation report after upstream stages complete."""
 
     request, context, milestones_payload = _parse_activity_payload(payload)
     orchestrator = get_orchestrator()
@@ -163,3 +140,9 @@ async def perform_validation(payload: Dict) -> Dict:
 
     result.summary = result.summary.model_copy(update={"milestones": milestones_models})
     return _serialize_stage_result(result)
+
+
+async def run_delivery(payload: Dict) -> Dict:
+    """Deliver the generated report via the configured Composio connector."""
+
+    return _load_orchestrator_result("delivery", payload)

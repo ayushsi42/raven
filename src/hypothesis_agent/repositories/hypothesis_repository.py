@@ -1,6 +1,7 @@
 """Repository abstractions for hypothesis records."""
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, Optional
 from uuid import UUID
@@ -24,14 +25,18 @@ class HypothesisRecord:
     validation: ValidationSummary
 
 
-class HypothesisRepository:
+class HypothesisRepository(ABC):
     """Abstract persistence interface for hypothesis records."""
 
+    @abstractmethod
     async def save(self, record: HypothesisRecord) -> None:  # pragma: no cover - interface stub
-        raise NotImplementedError
+        """Persist or update a hypothesis record."""
+        ...
 
+    @abstractmethod
     async def get(self, hypothesis_id: UUID) -> Optional[HypothesisRecord]:  # pragma: no cover - interface stub
-        raise NotImplementedError
+        """Retrieve a hypothesis record by its identifier."""
+        ...
 
 
 class InMemoryHypothesisRepository(HypothesisRepository):

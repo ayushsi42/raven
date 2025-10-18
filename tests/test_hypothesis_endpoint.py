@@ -11,103 +11,91 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 import pytest_asyncio
 
-from hypothesis_agent.config import get_settings
+from hypothesis_agent.config import AppSettings, get_settings
+from hypothesis_agent.connectors.news import NewsArticle
+from hypothesis_agent.connectors.sec import FilingRecord
+from hypothesis_agent.connectors.yahoo import PriceSeries
+from hypothesis_agent.llm import BaseLLM
 from hypothesis_agent.main import create_app
 from hypothesis_agent.models.hypothesis import HypothesisRequest
 from hypothesis_agent.services.hypothesis_service import HypothesisService
-
-class _StubWorkflowExecutionInfo:
-    def __init__(self, status: str, history_length: int) -> None:
-        self.status = type("Status", (), {"name": status})()
-        self.history_length = history_length
+from hypothesis_agent.orchestration.langgraph_pipeline import LangGraphValidationOrchestrator
+from hypothesis_agent.storage.artifact_store import ArtifactStore
 
 
-class _StubWorkflowDescription:
-    def __init__(self, status: str, history_length: int) -> None:
-        self.workflow_execution_info = _StubWorkflowExecutionInfo(status, history_length)
+class _StubLLM(BaseLLM):
+    def generate_data_plan(self, request: HypothesisRequest) -> list[str]:
+        return [
+            "Fetch historical prices",
+            "Pull SEC filings",
+            "Aggregate relevant news",
+        ]
 
+    def generate_analysis_plan(self, request: HypothesisRequest, data_overview: dict[str, object]) -> list[str]:
+        return [
+            "Calculate returns and volatility",
+            "Summarize recent filings",
+            "Score sentiment dispersion",
+        ]
 
-class _StubWorkflowHandle:
-    def __init__(
+    def generate_detailed_analysis(self, request: HypothesisRequest, metrics_overview: dict[str, object]) -> str:
+        return "The hypothesis remains plausible given momentum, filings cadence, and sentiment balance."
+
+    def generate_report(
         self,
-        workflow_id: str,
-        status: str,
-        history_length: int,
-        result_payload: dict,
-        milestones: list[dict],
-    ) -> None:
-        self.id = workflow_id
-        self.run_id = f"{workflow_id}-run"
-        self._description = _StubWorkflowDescription(status, history_length)
-        self._result_payload = result_payload
-        self._milestones = milestones
-
-    async def describe(self) -> _StubWorkflowDescription:
-        return self._description
-
-    async def result(self) -> dict:
-        return self._result_payload
-
-    async def query(self, name: str) -> list[dict]:
-        if name == "milestones":
-            return self._milestones
-        raise ValueError(name)
-
-
-class _StubTemporalClient:
-    def __init__(self) -> None:
-        self._summaries: dict[str, dict] = {}
-        self._milestones: dict[str, list[dict]] = {}
-
-    async def start_workflow(self, workflow: str, payload: dict, *, id: str, task_queue: str):
-        self.last_started = {
-            "workflow": workflow,
-            "payload": payload,
-            "id": id,
-            "task_queue": task_queue,
+        request: HypothesisRequest,
+        metrics_overview: dict[str, object],
+        analysis_summary: str,
+        artifact_paths: list[str],
+    ) -> dict[str, object]:
+        return {
+            "executive_summary": "Moderate support for the investment thesis.",
+            "key_findings": ["Momentum positive", "Filings cadence stable", "Sentiment constructive"],
+            "risks": ["Macro slowdown"],
+            "next_steps": ["Monitor earnings guidance"],
         }
-        summary, milestones = _build_stub_summary(HypothesisRequest.model_validate(payload))
-        self._status = "COMPLETED"
-        self._history_length = 42
-        self._summaries[id] = summary
-        self._milestones[id] = milestones
-        return _StubWorkflowHandle(id, self._status, self._history_length, summary, milestones)
 
-    def get_workflow_handle(self, workflow_id: str, run_id: str) -> _StubWorkflowHandle:
-        summary = self._summaries.get(workflow_id, {})
-        milestones = self._milestones.get(workflow_id, [])
-        return _StubWorkflowHandle(
-            workflow_id,
-            getattr(self, "_status", "RUNNING"),
-            getattr(self, "_history_length", 0),
-            summary,
-            milestones,
-        )
 
-    async def close(self) -> None:  # pragma: no cover - stubbed close
-        return None
+class _StubYahoo:
+    def fetch_daily_prices(self, ticker: str, start: date, end: date) -> PriceSeries:
+        prices = [
+            {"date": "2025-01-01", "open": 100.0, "high": 102.0, "low": 99.0, "close": 101.0, "adj_close": 101.0, "volume": 1_000_000},
+            {"date": "2025-01-02", "open": 101.0, "high": 103.0, "low": 100.0, "close": 102.5, "adj_close": 102.5, "volume": 1_200_000},
+            {"date": "2025-01-03", "open": 102.5, "high": 104.0, "low": 101.5, "close": 103.5, "adj_close": 103.5, "volume": 1_100_000},
+        ]
+        return PriceSeries(ticker=ticker, prices=prices)
 
-def _build_stub_summary(request: HypothesisRequest) -> tuple[dict, list[dict]]:
-    milestones = [
-        {"name": "data_ingest", "status": "completed", "detail": "Market, filings, news fetched."},
-        {"name": "entity_resolution", "status": "completed", "detail": "Entities resolved."},
-        {"name": "preprocessing", "status": "completed", "detail": "Normalized datasets."},
-        {"name": "analysis", "status": "completed", "detail": "Financial diagnostics computed."},
-        {"name": "sentiment", "status": "completed", "detail": "Sentiment scored."},
-        {"name": "modeling", "status": "completed", "detail": "Scenario modeling finished."},
-        {"name": "advanced_modeling", "status": "completed", "detail": "Advanced metrics computed."},
-        {"name": "human_review", "status": "completed", "detail": "Human review skipped."},
-        {"name": "report_generation", "status": "completed", "detail": "Report assembled."},
-    ]
-    summary = {
-        "score": 0.63,
-        "conclusion": "Partially supported",
-        "confidence": 0.58,
-        "evidence": [],
-        "current_stage": "report_generation",
-        "milestones": milestones,
-    }
-    return summary, milestones
+
+class _StubSec:
+    def fetch_recent_filings(self, ticker: str, limit: int = 5) -> list[FilingRecord]:
+        return [
+            FilingRecord(accession="0000001", filing_type="10-K", filed="2025-01-10", url="https://example.com/10k", company_name=f"{ticker} Inc"),
+            FilingRecord(accession="0000002", filing_type="10-Q", filed="2024-11-01", url="https://example.com/10q", company_name=f"{ticker} Inc"),
+        ]
+
+
+class _StubNews:
+    def fetch_sentiment(self, tickers: list[str], limit: int = 5) -> list[NewsArticle]:
+        return [
+            NewsArticle(title="Growth outlook brightens", summary="", url="https://example.com/a", sentiment=0.4),
+            NewsArticle(title="New product launch", summary="", url="https://example.com/b", sentiment=0.2),
+        ]
+
+
+class _StubTool:
+    def __init__(self, sink: list[dict[str, object]]) -> None:
+        self._sink = sink
+
+    def invoke(self, payload: dict[str, object]) -> None:
+        self._sink.append(payload)
+
+
+class _StubToolSet:
+    def __init__(self) -> None:
+        self.invocations: list[dict[str, object]] = []
+
+    def get_tool(self, name: str) -> _StubTool:
+        return _StubTool(self.invocations)
 
 
 @pytest_asyncio.fixture
@@ -116,12 +104,32 @@ async def test_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIter
 
     db_path = tmp_path / "test.db"
     monkeypatch.setenv("RAVEN_DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
-    monkeypatch.setenv("RAVEN_TEMPORAL_ADDRESS", "test-address")
+    artifact_root = tmp_path / "artifacts"
+    settings = AppSettings(
+        notification_email="reports@example.com",
+        artifact_store_path=str(artifact_root),
+    )
+    toolset = _StubToolSet()
+
+    def _factory() -> LangGraphValidationOrchestrator:
+        artifact_store = ArtifactStore.from_path(settings.artifact_store_path)
+        return LangGraphValidationOrchestrator(
+            settings=settings,
+            llm=_StubLLM(),
+            yahoo_client=_StubYahoo(),
+            sec_client=_StubSec(),
+            news_client=_StubNews(),
+            artifact_store=artifact_store,
+            toolset=toolset,
+        )
+
+    monkeypatch.setattr(
+        "hypothesis_agent.workflows.hypothesis_workflow.LangGraphValidationOrchestrator",
+        _factory,
+    )
     get_settings.cache_clear()  # type: ignore[attr-defined]
     app = create_app()
-
-    stub_client = _StubTemporalClient()
-    app.state.workflow_client.temporal_client = stub_client
+    app.state.stub_toolset = toolset
     app.state.hypothesis_service = HypothesisService(
         repository=app.state.hypothesis_repository,
         workflow_client=app.state.workflow_client,
@@ -172,7 +180,7 @@ async def test_submit_and_retrieve_hypothesis(test_app) -> None:
     assert get_data["status"] == "accepted"
     assert isinstance(get_data["validation"]["score"], float)
     assert isinstance(get_data["validation"]["confidence"], float)
-    assert get_data["validation"]["current_stage"] in {"report_generation", "human_review"}
+    assert get_data["validation"]["current_stage"] in {"delivery", "human_review"}
     milestones = get_data["validation"].get("milestones", [])
     assert any(m["name"] == "report_generation" for m in milestones)
     assert all("status" in m for m in milestones)
@@ -180,10 +188,11 @@ async def test_submit_and_retrieve_hypothesis(test_app) -> None:
     assert status_response.status_code == 200
     status_data = status_response.json()
     assert status_data["workflow_status"] == "COMPLETED"
-    assert status_data["workflow_history_length"] == 42
-    assert status_data["validation"]["current_stage"] == "report_generation"
+    assert status_data["workflow_history_length"] == len(status_data["validation"]["milestones"])
+    assert status_data["validation"]["current_stage"] == "delivery"
     assert len(status_data["validation"]["milestones"]) >= 1
-    assert status_data["validation"]["milestones"][-1]["name"] == "report_generation"
+    assert status_data["validation"]["milestones"][-1]["name"] == "delivery"
+    assert test_app.state.stub_toolset.invocations, "Delivery stage should send a notification"
 
 
 @pytest.mark.asyncio
