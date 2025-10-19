@@ -3,14 +3,15 @@ from __future__ import annotations
 
 import io
 import json
+import textwrap
 from dataclasses import asdict, dataclass, field, is_dataclass
 from pathlib import Path
 from statistics import mean, pstdev
 from typing import Any, Dict, List, Optional, Protocol, cast
 
 import matplotlib.pyplot as plt
-from composio.client import exceptions as composio_exceptions
-from composio_langchain import Composio
+from composio import Composio
+from composio.exceptions import ApiKeyNotProvidedError
 from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
 
@@ -86,7 +87,7 @@ class _LazyComposioToolSet:
             try:
                 self._client = Composio()
             except Exception as exc:
-                if isinstance(exc, composio_exceptions.ApiKeyNotProvidedError):
+                if isinstance(exc, ApiKeyNotProvidedError):
                     raise RuntimeError(
                         "Composio API key must be provided via COMPOSIO_API_KEY to run the delivery stage."
                     ) from exc
@@ -105,9 +106,9 @@ class LangGraphValidationOrchestrator:
         *,
         settings: AppSettings | None = None,
         llm: BaseLLM | None = None,
-        yahoo_client: YahooFinanceClient | None = None,
-        sec_client: SecFilingsClient | None = None,
-        news_client: NewsClient | None = None,
+    yahoo_client: YahooFinanceClient | None = None,
+    sec_client: SecFilingsClient | None = None,
+    news_client: NewsClient | None = None,
         artifact_store: ArtifactStore | None = None,
         toolset: ToolSet | None = None,
     ) -> None:
@@ -119,7 +120,7 @@ class LangGraphValidationOrchestrator:
                 raise LLMError("OpenAI API key must be configured for validation pipeline")
             self.llm = OpenAILLM(api_key=self.settings.openai_api_key, model=self.settings.openai_model)
         self.yahoo = yahoo_client or YahooFinanceClient()
-        self.sec = sec_client or SecFilingsClient(user_agent=self.settings.sec_user_agent)
+        self.sec = sec_client
         if not self.settings.alpha_vantage_api_key:
             raise RuntimeError("Alpha Vantage API key must be configured for news collection")
         self.news = news_client or NewsClient(api_key=self.settings.alpha_vantage_api_key)
@@ -174,21 +175,30 @@ class LangGraphValidationOrchestrator:
 
         primary_ticker = request.entities[0]
         market_info = self._collect_market_data(request, workflow_id, primary_ticker)
-        filings_info = self._collect_filings_data(workflow_id, primary_ticker)
+        filings_info = None
+        if self.sec is not None:
+            try:
+                filings_info = self._collect_filings_data(workflow_id, primary_ticker)
+            except Exception as exc:
+                context.setdefault("insights", []).append(f"SEC fetch skipped: {exc}")
+                filings_info = None
         news_info = self._collect_news_data(workflow_id, request.entities)
 
-        context["data_sources"] = {
-            "market": market_info,
-            "filings": filings_info,
-            "news": news_info,
-        }
-        context.setdefault("insights", []).append("Fetched live market, SEC, and news datasets.")
+        data_sources: Dict[str, Any] = {"market": market_info, "news": news_info}
+        if filings_info is not None:
+            data_sources["filings"] = filings_info
 
-        evidence = [
-            EvidenceReference(type="market_data", uri=market_info["path"]),
-            EvidenceReference(type="sec_filings", uri=filings_info["path"]),
-            EvidenceReference(type="news_sentiment", uri=news_info["path"]),
-        ]
+        context["data_sources"] = data_sources
+        insights = context.setdefault("insights", [])
+        if filings_info is not None:
+            insights.append("Fetched live market, SEC, and news datasets.")
+        else:
+            insights.append("Fetched live market and news datasets.")
+
+        evidence = [EvidenceReference(type="market_data", uri=market_info["path"])]
+        if filings_info is not None:
+            evidence.append(EvidenceReference(type="sec_filings", uri=filings_info["path"]))
+        evidence.append(EvidenceReference(type="news_sentiment", uri=news_info["path"]))
         for ref in evidence:
             self._record_evidence(context, ref)
 
@@ -230,25 +240,33 @@ class LangGraphValidationOrchestrator:
         if not workflow_id:
             raise RuntimeError("Workflow ID missing from context metadata.")
 
-        market_metrics, chart_path = self._compute_market_metrics(workflow_id, data_sources["market"])
-        filings_metrics = self._compute_filings_metrics(data_sources["filings"])
-        news_metrics = self._compute_news_metrics(data_sources["news"])
+        market_analysis, chart_path = self._compute_market_metrics(workflow_id, data_sources["market"])
+        filings_analysis: Dict[str, Any] | None = None
+        if "filings" in data_sources:
+            filings_analysis = self._compute_filings_metrics(data_sources["filings"])
+        news_analysis = self._compute_news_metrics(data_sources["news"])
 
         analysis_results = {
-            "market": market_metrics,
-            "filings": filings_metrics,
-            "news": news_metrics,
+            "market": market_analysis,
+            "news": news_analysis,
             "charts": [chart_path],
         }
+        if filings_analysis is not None:
+            analysis_results["filings"] = filings_analysis
+        aggregated_insights = []
+        aggregated_insights.extend(market_analysis.get("insights", []))
+        aggregated_insights.extend(news_analysis.get("insights", []))
+        if filings_analysis is not None:
+            aggregated_insights.extend(filings_analysis.get("insights", []))
+        analysis_results["insights"] = aggregated_insights
         metrics_path = self.artifact_store.write_json(workflow_id, "analysis_metrics", analysis_results).resolve().as_uri()
         analysis_results["metrics_path"] = metrics_path
         context["analysis_results"] = analysis_results
-        context.setdefault("insights", []).append("Hybrid quantitative and qualitative analytics computed.")
+        insights_bucket = context.setdefault("insights", [])
+        insights_bucket.append("Hybrid quantitative and qualitative analytics computed.")
+        insights_bucket.extend(insight for insight in aggregated_insights[:3])
 
-        evidence = [
-            EvidenceReference(type="analysis_metrics", uri=metrics_path),
-            EvidenceReference(type="chart", uri=chart_path),
-        ]
+        evidence = [EvidenceReference(type="analysis_metrics", uri=metrics_path), EvidenceReference(type="chart", uri=chart_path)]
         for ref in evidence:
             self._record_evidence(context, ref)
 
@@ -290,18 +308,34 @@ class LangGraphValidationOrchestrator:
         detailed = context.get("detailed_analysis")
         if not detailed:
             raise RuntimeError("Detailed analysis missing; run detailed_analysis stage first.")
-        analysis_results = detailed.get("metrics") or {}
+        analysis_results = detailed.get("metrics")
+        if not analysis_results:
+            raise RuntimeError("Detailed analysis metrics missing; run detailed_analysis stage first.")
+        if not isinstance(analysis_results, dict):
+            raise RuntimeError("Detailed analysis metrics payload malformed; expected mapping")
+        plan = context.get("plan")
+        if not plan or not plan.get("steps"):
+            raise RuntimeError("Validation plan missing; run plan_generation stage first.")
+        plan_steps = plan["steps"]
+        if not isinstance(plan_steps, list) or not plan_steps:
+            raise RuntimeError("Plan steps payload malformed; expected non-empty list of strings.")
+        if not all(isinstance(step, str) and step.strip() for step in plan_steps):
+            raise RuntimeError("Plan steps must be non-empty strings")
+        chart_artifacts = analysis_results.get("charts")
+        if not chart_artifacts or not isinstance(chart_artifacts, list):
+            raise RuntimeError("Analysis results missing chart artifacts for report generation")
+        if not all(isinstance(item, str) for item in chart_artifacts):
+            raise RuntimeError("Chart artifact paths must be strings")
 
         report_payload = self.llm.generate_report(
             request=request,
             metrics_overview=analysis_results,
             analysis_summary=detailed["narrative"],
-            artifact_paths=analysis_results.get("charts", []),
+            artifact_paths=chart_artifacts,
         )
         if not isinstance(report_payload, dict):
             raise RuntimeError("LLM report payload must be a dictionary")
 
-        plan_steps = context.get("plan", {}).get("steps", [])
         report_pdf = self._render_report_pdf(
             workflow_id=workflow_id,
             request=request,
@@ -401,29 +435,54 @@ class LangGraphValidationOrchestrator:
     # ------------------------------------------------------------------
     # Analysis helpers
     # ------------------------------------------------------------------
-    def _compute_market_metrics(self, workflow_id: str, market_info: Dict[str, Any]) -> tuple[Dict[str, float], str]:
+    def _compute_market_metrics(self, workflow_id: str, market_info: Dict[str, Any]) -> tuple[Dict[str, Any], str]:
         payload = self._load_json(market_info["path"])
         series = payload.get("series", [])
-        closes = [float(item["close"]) for item in series if item.get("close") is not None]
-        if len(closes) < 2:
-            raise RuntimeError("Insufficient market data for hybrid analysis.")
 
-        returns = [(closes[idx] / closes[idx - 1]) - 1 for idx in range(1, len(closes))]
-        volatility = pstdev(returns) if len(returns) > 1 else 0.0
-        avg_return = mean(returns)
-        trading_days = len(closes)
-        years = trading_days / 252 if trading_days else 1.0
-        cagr = (closes[-1] / closes[0]) ** (1 / years) - 1 if years > 0 else 0.0
+        ticker = payload.get("ticker")
+        if not ticker:
+            raise RuntimeError("Market data payload missing ticker symbol")
 
-        metrics = {
-            "start_price": round(closes[0], 4),
-            "end_price": round(closes[-1], 4),
-            "cagr": round(cagr, 4),
-            "volatility": round(volatility, 4),
-            "avg_return": round(avg_return, 4),
-        }
-        chart_path = self._generate_price_chart(workflow_id, payload.get("ticker", ""), series)
-        return metrics, chart_path
+        metrics_code = textwrap.dedent(
+            """
+            import json
+            from statistics import mean, pstdev
+
+            label = ticker or "Asset"
+            closes = [float(item["close"]) for item in series if item.get("close") is not None]
+            if len(closes) < 2:
+                raise ValueError("Insufficient market data for hybrid analysis.")
+
+            returns = [(closes[idx] / closes[idx - 1]) - 1 for idx in range(1, len(closes))]
+            volatility = pstdev(returns) if len(returns) > 1 else 0.0
+            avg_return = mean(returns)
+            trading_days = len(closes)
+            years = trading_days / 252 if trading_days else 1.0
+            cagr = (closes[-1] / closes[0]) ** (1 / years) - 1 if years > 0 else 0.0
+
+            insights = [
+                f"{label}: CAGR {cagr:.2%} with volatility {volatility:.2%}.",
+                f"{label}: Average session return {avg_return:.2%} across {trading_days} trading days.",
+            ]
+
+            json.dumps(
+                {
+                    "metrics": {
+                        "start_price": round(closes[0], 4),
+                        "end_price": round(closes[-1], 4),
+                        "cagr": round(cagr, 4),
+                        "volatility": round(volatility, 4),
+                        "avg_return": round(avg_return, 4),
+                    },
+                    "insights": insights,
+                }
+            )
+            """
+        )
+
+        metrics_raw = self._run_python_repl(metrics_code, locals={"series": series, "ticker": ticker})
+        chart_path = self._generate_price_chart(workflow_id, ticker, series)
+        return self._parse_analysis_json(metrics_raw), chart_path
 
     def _compute_filings_metrics(self, filings_info: Dict[str, Any]) -> Dict[str, Any]:
         payload = self._load_json(filings_info["path"])
@@ -431,11 +490,18 @@ class LangGraphValidationOrchestrator:
         if not records:
             raise RuntimeError("SEC filings dataset is empty.")
         latest = sorted(records, key=lambda item: item.get("filed", ""), reverse=True)
-        return {
+        metrics = {
             "filing_count": len(records),
             "recent_forms": [record.get("filing_type") for record in latest[:5]],
             "latest_filed": latest[0].get("filed"),
         }
+        insights = [
+            f"Filings cadence steady with {metrics['filing_count']} submissions in record set.",
+            f"Most recent filing type: {metrics['recent_forms'][0]} dated {metrics['latest_filed']}."
+            if metrics["recent_forms"] and metrics["latest_filed"]
+            else "Reviewed recent regulatory activity for cadence context.",
+        ]
+        return {"metrics": metrics, "insights": insights}
 
     def _compute_news_metrics(self, news_info: Dict[str, Any]) -> Dict[str, Any]:
         payload = self._load_json(news_info["path"])
@@ -443,25 +509,36 @@ class LangGraphValidationOrchestrator:
         if not articles:
             raise RuntimeError("News sentiment dataset is empty.")
         sentiments = [float(article.get("sentiment", 0.0)) for article in articles]
-        return {
+        avg_sentiment = round(mean(sentiments), 4)
+        metrics = {
             "article_count": len(articles),
-            "avg_sentiment": round(mean(sentiments), 4),
+            "avg_sentiment": avg_sentiment,
             "sentiment_range": [round(min(sentiments), 4), round(max(sentiments), 4)],
         }
+        stance = "constructive" if avg_sentiment > 0 else "cautious" if avg_sentiment < 0 else "balanced"
+        insights = [
+            f"News flow {stance} with average sentiment {avg_sentiment:+.2f} across {metrics['article_count']} articles.",
+            "Sentiment dispersion captured via range for volatility context.",
+        ]
+        return {"metrics": metrics, "insights": insights}
 
     # ------------------------------------------------------------------
     # Rendering and delivery helpers
     # ------------------------------------------------------------------
     def _generate_price_chart(self, workflow_id: str, ticker: str, series: List[Dict[str, Any]]) -> str:
-        dates = [row.get("date") for row in series]
-        closes = [float(row.get("close", 0.0)) for row in series]
-        if plt is None:
-            placeholder = {
-                "ticker": ticker,
-                "series": [{"date": d, "close": c} for d, c in zip(dates, closes)],
-                "note": "Matplotlib unavailable; generated JSON artifact instead of chart image.",
-            }
-            return self.artifact_store.write_json(workflow_id, "price_trend", placeholder).resolve().as_uri()
+        if not ticker:
+            raise RuntimeError("Market data payload missing ticker symbol for chart generation")
+        if not series:
+            raise RuntimeError("Price series is empty; cannot generate chart")
+
+        dates: List[Any] = []
+        closes: List[float] = []
+        try:
+            for row in series:
+                dates.append(row["date"])
+                closes.append(float(row["close"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("Price series missing required fields for chart generation") from exc
 
         fig, ax = plt.subplots(figsize=(8, 3))
         ax.plot(dates, closes, color="#0B69FF", linewidth=1.6)
@@ -487,17 +564,12 @@ class LangGraphValidationOrchestrator:
         detailed_analysis: Dict[str, Any],
         report_payload: Dict[str, Any],
     ) -> str:
-        if canvas is None or LETTER is None:
-            placeholder_content = {
-                "workflow_id": workflow_id,
-                "hypothesis_text": request.hypothesis_text,
-                "plan_steps": plan_steps,
-                "analysis_results": analysis_results,
-                "detailed_analysis": detailed_analysis,
-                "report_payload": report_payload,
-                "note": "ReportLab unavailable; generated JSON artifact instead of PDF report.",
-            }
-            return self.artifact_store.write_json(workflow_id, "validation_report", placeholder_content).resolve().as_uri()
+        if detailed_analysis.get("narrative") is None:
+            raise RuntimeError("Detailed analysis narrative missing for report rendering")
+        if not plan_steps:
+            raise RuntimeError("Plan steps missing for report rendering")
+        if not analysis_results:
+            raise RuntimeError("Analysis results missing for report rendering")
 
         buffer = io.BytesIO()
         pdf = canvas.Canvas(buffer, pagesize=LETTER)
@@ -513,10 +585,8 @@ class LangGraphValidationOrchestrator:
         pdf.drawString(72, 660, "Plan Overview")
         text_obj = pdf.beginText(72, 644)
         text_obj.setFont("Helvetica", 10)
-        for idx, step in enumerate(plan_steps or [], start=1):
+        for idx, step in enumerate(plan_steps, start=1):
             text_obj.textLine(f"{idx}. {step}")
-        if not plan_steps:
-            text_obj.textLine("Plan steps unavailable")
         pdf.drawText(text_obj)
 
         pdf.setFont("Helvetica-Bold", 12)
@@ -532,7 +602,7 @@ class LangGraphValidationOrchestrator:
         pdf.drawString(72, 468, "Narrative Summary")
         text_obj = pdf.beginText(72, 452)
         text_obj.setFont("Helvetica", 10)
-        narrative = detailed_analysis.get("narrative", "Narrative unavailable.")
+        narrative = str(detailed_analysis["narrative"])
         for line in narrative.splitlines():
             text_obj.textLine(line)
         pdf.drawText(text_obj)
@@ -599,6 +669,39 @@ class LangGraphValidationOrchestrator:
     # ------------------------------------------------------------------
     # Utility helpers
     # ------------------------------------------------------------------
+    def _run_python_repl(self, code: str, *, locals: Dict[str, Any]) -> str:
+        try:
+            from langchain_experimental.tools.python.tool import PythonREPLTool  # type: ignore
+        except ImportError as exc:  # pragma: no cover - dependency missing
+            raise RuntimeError(
+                "langchain-experimental must be installed to execute Python analysis snippets."
+            ) from exc
+
+        tool = PythonREPLTool(locals=dict(locals))
+        result = tool.run(code)
+        if result is None:
+            raise RuntimeError("Python REPL returned no output")
+        return str(result).strip()
+
+    @staticmethod
+    def _parse_analysis_json(raw: str) -> Dict[str, Any]:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:  # pragma: no cover - defensive guard
+            raise RuntimeError("Python REPL returned invalid JSON payload") from exc
+        if not isinstance(parsed, dict):
+            raise RuntimeError("Python REPL analysis payload malformed; expected mapping")
+        metrics = parsed.get("metrics")
+        if not isinstance(metrics, dict):
+            raise RuntimeError("Python REPL analysis payload missing 'metrics' mapping")
+        insights = parsed.get("insights", [])
+        if not isinstance(insights, list):
+            raise RuntimeError("Python REPL analysis payload 'insights' must be a list")
+        payload = dict(parsed)
+        payload["metrics"] = metrics
+        payload["insights"] = insights
+        return payload
+
     @staticmethod
     def _serialize_record(record: Any) -> Dict[str, Any]:
         if isinstance(record, dict):
@@ -617,9 +720,9 @@ class LangGraphValidationOrchestrator:
             return json.load(handle)
 
     def _score_validation(self, analysis_results: Dict[str, Any]) -> tuple[float, float]:
-        market = analysis_results.get("market", {})
-        news = analysis_results.get("news", {})
-        filings = analysis_results.get("filings", {})
+        market = (analysis_results.get("market") or {}).get("metrics", {})
+        news = (analysis_results.get("news") or {}).get("metrics", {})
+        filings = (analysis_results.get("filings") or {}).get("metrics", {})
         score = 0.5
         score += float(market.get("cagr", 0.0)) * 0.4
         score += float(news.get("avg_sentiment", 0.0)) * 0.2
@@ -642,6 +745,14 @@ class LangGraphValidationOrchestrator:
     def _record_evidence(self, context: StageContext, evidence: EvidenceReference) -> None:
         context.setdefault("evidence", []).append(evidence.model_dump(mode="json"))
         context.setdefault("artifacts", []).append(evidence.model_dump(mode="json"))
+
+    @staticmethod
+    def _record_stage_metadata(context: StageContext, stage: str, key: str, status: str, detail: str | None = None) -> None:
+        metadata = context.setdefault("metadata", {})
+        stages = metadata.setdefault("stages", {})
+        stage_entry = stages.setdefault(stage, {"steps": {}})
+        steps = stage_entry.setdefault("steps", {})
+        steps[key] = {"status": status, "detail": detail}
 
     @staticmethod
     def _clone_context(context: StageContext | None) -> StageContext:

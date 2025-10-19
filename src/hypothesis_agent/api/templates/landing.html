@@ -18,9 +18,13 @@
         --text-primary: #ffffff;
         --text-muted: rgba(255, 255, 255, 0.5);
         --text-subtle: rgba(255, 255, 255, 0.3);
-        --accent: #ffffff;
-        --accent-soft: rgba(255, 255, 255, 0.08);
-        --accent-hover: rgba(255, 255, 255, 0.12);
+  --accent: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.08);
+  --accent-hover: rgba(255, 255, 255, 0.12);
+  --accent-primary: #3b82f6;
+  --accent-secondary: #10b981;
+  --progress-track: rgba(255, 255, 255, 0.08);
+  --progress-fill: linear-gradient(90deg, rgba(59, 130, 246, 0.85), rgba(16, 185, 129, 0.85));
         font-family: "Inter", system-ui, -apple-system, sans-serif;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
@@ -35,21 +39,18 @@
         min-height: 100vh;
         background: var(--bg);
         color: var(--text-primary);
-        padding: clamp(3rem, 6vw, 4rem) 2.5rem;
+        padding: clamp(2.5rem, 4vw, 3rem);
         font-size: 14px;
         line-height: 1.5;
-        display: flex;
-        justify-content: center;
-        align-items: flex-start;
       }
 
       .canvas {
-        width: min(1200px, 100%);
+        max-width: 1600px;
+        margin: 0 auto;
         display: grid;
-        gap: clamp(2.5rem, 4vw, 3.25rem);
-        padding: clamp(2.5rem, 5vw, 3.75rem);
+        gap: clamp(2rem, 3vw, 3rem);
+        padding: clamp(2rem, 4vw, 3rem);
         border-radius: 18px;
-        border: 1px solid var(--border);
         background: var(--surface);
         box-shadow: 0 28px 80px rgba(0, 0, 0, 0.35);
       }
@@ -80,12 +81,14 @@
         display: grid;
         gap: 2rem;
         grid-template-columns: 1fr;
+        align-items: start;
       }
 
       @media (min-width: 1000px) {
         .content {
           grid-template-columns: 1.2fr 1fr;
           gap: 3rem;
+          align-items: start;
         }
       }
 
@@ -186,6 +189,23 @@
         transform: translateY(0);
       }
 
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .button-destructive {
+        border-color: rgba(248, 113, 113, 0.35);
+        background: rgba(248, 113, 113, 0.12);
+        color: rgba(248, 113, 113, 0.9);
+      }
+
+      .button-destructive:hover:not(:disabled) {
+        border-color: rgba(248, 113, 113, 0.5);
+        background: rgba(248, 113, 113, 0.18);
+      }
+
       .status-panel {
         display: grid;
         gap: 2rem;
@@ -227,6 +247,158 @@
         font-weight: 300;
       }
 
+      .milestone-header {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-subtle);
+        font-weight: 500;
+      }
+
+      .progress {
+        display: grid;
+        gap: 0.75rem;
+        padding: 1.25rem 1.5rem;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.02);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.01);
+        transition: border-color 0.3s ease, background 0.3s ease;
+      }
+
+      .progress-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        text-transform: uppercase;
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        color: var(--text-muted);
+        font-weight: 500;
+      }
+
+      .progress-track {
+        height: 6px;
+        border-radius: 999px;
+        background: var(--progress-track);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .progress-indicator {
+        position: absolute;
+        inset: 0;
+        width: 0%;
+        border-radius: inherit;
+        background: var(--progress-fill);
+        transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 8px 18px rgba(59, 130, 246, 0.25);
+      }
+
+      .progress-steps {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 0.75rem;
+      }
+
+      .progress-step {
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        padding: 0.75rem 0.9rem;
+        display: grid;
+        gap: 0.35rem;
+        background: rgba(255, 255, 255, 0.015);
+        transition: border-color 0.3s ease, background 0.3s ease, transform 0.3s ease;
+      }
+
+      .progress-step:hover {
+        transform: translateY(-1px);
+        border-color: var(--border-focus);
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .progress-step::before {
+        content: attr(data-index);
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-subtle);
+      }
+
+      .progress-step-title {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-primary);
+        letter-spacing: 0.01em;
+      }
+
+      .progress-step-detail {
+        font-size: 11px;
+        color: var(--text-subtle);
+        line-height: 1.4;
+      }
+
+      .progress-step-status {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 600;
+        width: fit-content;
+        padding: 0.25rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid transparent;
+      }
+
+      .progress-step[data-status="completed"] {
+        border-color: rgba(34, 197, 94, 0.45);
+        background: rgba(34, 197, 94, 0.12);
+      }
+
+      .progress-step[data-status="completed"] .progress-step-status {
+        border-color: rgba(34, 197, 94, 0.4);
+        color: rgba(34, 197, 94, 0.85);
+        background: rgba(34, 197, 94, 0.15);
+      }
+
+      .progress-step[data-status="running"] {
+        border-color: rgba(59, 130, 246, 0.5);
+        background: rgba(59, 130, 246, 0.12);
+      }
+
+      .progress-step[data-status="running"] .progress-step-status {
+        border-color: rgba(59, 130, 246, 0.45);
+        color: rgba(59, 130, 246, 0.9);
+        background: rgba(59, 130, 246, 0.18);
+      }
+
+      .progress-step[data-status="waiting_review"] {
+        border-color: rgba(251, 191, 36, 0.45);
+        background: rgba(251, 191, 36, 0.12);
+      }
+
+      .progress-step[data-status="waiting_review"] .progress-step-status {
+        border-color: rgba(251, 191, 36, 0.4);
+        color: rgba(251, 191, 36, 0.9);
+        background: rgba(251, 191, 36, 0.18);
+      }
+
+      .progress-step[data-status="pending"] .progress-step-status {
+        border-color: var(--border);
+        color: var(--text-subtle);
+      }
+
+      .progress-step[data-status="cancelled"] {
+        border-color: rgba(248, 113, 113, 0.35);
+        background: rgba(248, 113, 113, 0.12);
+      }
+
+      .progress-step[data-status="cancelled"] .progress-step-status {
+        border-color: rgba(248, 113, 113, 0.4);
+        color: rgba(248, 113, 113, 0.9);
+        background: rgba(248, 113, 113, 0.15);
+      }
+
       .pill {
         display: inline-flex;
         align-items: center;
@@ -243,67 +415,51 @@
         width: fit-content;
       }
 
-      .milestones {
-        display: grid;
-        gap: 0.5rem;
-      }
-
-      .milestone-header {
-        font-size: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--text-subtle);
-        font-weight: 500;
-        margin-bottom: 0.5rem;
-      }
-
-      .milestone {
-        padding: 0.75rem 1rem;
-        border-radius: 4px;
-        background: transparent;
+      details.report-summary {
         border: 1px solid var(--border);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        font-size: 12px;
-        transition: background 0.2s ease;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.02);
+        padding: 1rem 1.25rem;
+        color: var(--text-primary);
       }
 
-      .milestone:hover {
-        background: var(--accent-soft);
-      }
-
-      .milestone span:first-child {
-        font-weight: 400;
-      }
-
-      .milestone span:last-child {
-        color: var(--text-subtle);
-        font-size: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        font-weight: 500;
-      }
-
-      section.report {
-        display: grid;
-        gap: 1rem;
-      }
-
-      section.report h2 {
-        margin: 0;
-        font-weight: 500;
+      details.report-summary > summary {
+        cursor: pointer;
         font-size: 11px;
         text-transform: uppercase;
         letter-spacing: 0.08em;
+        font-weight: 500;
         color: var(--text-muted);
-        padding-bottom: 1rem;
-        border-bottom: 1px solid var(--border);
+        list-style: none;
+        position: relative;
       }
 
-      pre {
+      details.report-summary[open] > summary {
+        color: var(--text-primary);
+      }
+
+      details.report-summary > summary::marker,
+      details.report-summary > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      details.report-summary > summary::after {
+        content: "▾";
+        position: absolute;
+        right: 0;
+        top: 0;
+        font-size: 12px;
+        transition: transform 0.2s ease;
+      }
+
+      details.report-summary[open] > summary::after {
+        transform: rotate(180deg);
+      }
+
+      details.report-summary pre {
         margin: 0;
-        padding: 1.5rem;
+        margin-top: 1rem;
+        padding: 1.25rem;
         border-radius: 6px;
         background: var(--surface-strong);
         border: 1px solid var(--border);
@@ -373,6 +529,10 @@
               <span>User ID</span>
               <input type="text" name="user_id" placeholder="Your identifier" required />
             </label>
+            <label class="form-field">
+              <span>API Key (optional)</span>
+              <input type="password" name="api_key" placeholder="x-api-key header" autocomplete="off" />
+            </label>
           </div>
           <div class="form-row wrap">
             <label class="form-field">
@@ -402,18 +562,18 @@
           <button type="submit">Validate Hypothesis</button>
         </form>
         <aside class="status-panel">
-          <h2>Status Overview</h2>
-          <div class="status-grid">
-            <div><strong>Hypothesis ID</strong><br /><span id="hypothesis-id">—</span></div>
-            <div><strong>Workflow</strong><br /><span id="workflow-id">—</span></div>
-            <div><strong>Conclusion</strong><br /><span id="conclusion">—</span></div>
-            <div><strong>Confidence</strong><br /><span id="confidence">—</span></div>
-            <div class="pill" id="status-pill">Awaiting submission</div>
+          <div class="pill" id="status-pill">Awaiting submission</div>
+          <div class="progress" id="progress-panel">
+            <div class="progress-label">
+              <span>Workflow Progress</span>
+              <span id="progress-percentage">0%</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-indicator" id="progress-indicator"></div>
+            </div>
+            <div class="progress-steps" id="progress-steps"></div>
           </div>
-          <div class="milestones">
-            <div class="milestone-header">Milestones</div>
-            <div id="milestone-list"></div>
-          </div>
+          <button type="button" id="stop-button" class="button-destructive" disabled>Stop Workflow</button>
           <div id="resume-controls" class="hidden">
             <div class="milestone-header">Human Review</div>
             <div class="form-row wrap">
@@ -430,28 +590,35 @@
           </div>
         </aside>
       </div>
-      <section class="report">
-        <h2>Validation Summary</h2>
+      <details class="report-summary hidden" id="summary-details">
+        <summary>Validation Summary</summary>
         <pre id="summary-json">Submit a hypothesis to see the validation report.</pre>
-      </section>
+      </details>
     </div>
     <script>
       const form = document.getElementById('hypothesis-form');
       const statusCard = {
-        hypothesisId: document.getElementById('hypothesis-id'),
-        workflowId: document.getElementById('workflow-id'),
-        conclusion: document.getElementById('conclusion'),
-        confidence: document.getElementById('confidence'),
         pill: document.getElementById('status-pill'),
-        milestones: document.getElementById('milestone-list'),
         summary: document.getElementById('summary-json'),
         resumeControls: document.getElementById('resume-controls'),
         resumeDecision: document.getElementById('resume-decision'),
         resumeButton: document.getElementById('resume-button'),
+        stopButton: document.getElementById('stop-button'),
+        progressIndicator: document.getElementById('progress-indicator'),
+        progressSteps: document.getElementById('progress-steps'),
+        progressPercent: document.getElementById('progress-percentage'),
+        progressPanel: document.getElementById('progress-panel'),
+        apiKeyInput: document.querySelector('input[name="api_key"]'),
+        summaryDetails: document.getElementById('summary-details'),
       };
 
       let currentHypothesisId = null;
       const apiBase = document.body.dataset.apiBase;
+      const apiKeyStorageKey = 'raven-ui-api-key';
+      const storedKey = window.localStorage.getItem(apiKeyStorageKey);
+      if (storedKey && statusCard.apiKeyInput) {
+        statusCard.apiKeyInput.value = storedKey;
+      }
 
       const stageLabels = {
         plan_generation: 'Plan Generation',
@@ -464,11 +631,28 @@
         delivery: 'Delivery',
       };
 
+      const baseStageOrder = [
+        'plan_generation',
+        'data_collection',
+        'analysis_planning',
+        'hybrid_analysis',
+        'detailed_analysis',
+        'report_generation',
+        'delivery',
+      ];
+
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         statusCard.pill.textContent = 'Submitting…';
         statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
+        statusCard.stopButton.disabled = true;
         const formData = new FormData(form);
+        const apiKey = statusCard.apiKeyInput?.value?.trim() ?? '';
+        if (apiKey) {
+          window.localStorage.setItem(apiKeyStorageKey, apiKey);
+        } else {
+          window.localStorage.removeItem(apiKeyStorageKey);
+        }
         const entities = formData.get('entities')
           ? formData.get('entities').split(',').map((item) => item.trim()).filter(Boolean)
           : [];
@@ -488,12 +672,13 @@
         try {
           const response = await fetch(`${apiBase}/hypotheses`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildHeaders(apiKey),
             body: JSON.stringify(payload),
           });
 
           if (!response.ok) {
-            throw new Error(`Submission failed: ${response.status}`);
+            const detail = await safeReadDetail(response);
+            throw new Error(`Submission failed: ${response.status} ${detail}`);
           }
 
           const data = await response.json();
@@ -501,11 +686,14 @@
           currentHypothesisId = data.hypothesis_id;
           statusCard.pill.textContent = 'Submitted';
           statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
+          statusCard.stopButton.disabled = false;
           pollStatus();
         } catch (error) {
           console.error(error);
           statusCard.pill.textContent = 'Error submitting hypothesis';
           statusCard.pill.style.background = 'rgba(248, 113, 113, 0.15)';
+          statusCard.summary.textContent =
+            error instanceof Error ? error.message : String(error);
         }
       });
 
@@ -514,46 +702,152 @@
         statusCard.pill.textContent = 'Processing…';
         statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
         try {
-          const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/status`);
+          const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/status`, {
+            headers: buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? ''),
+          });
           if (!response.ok) throw new Error('Failed to fetch status');
           const data = await response.json();
           updateSummary(data);
-          if (data.validation?.current_stage === 'report_generation') {
-            statusCard.pill.textContent = 'Completed';
-            statusCard.pill.style.background = 'rgba(34, 197, 94, 0.15)';
-          } else {
+          if (!isWorkflowTerminal(data)) {
             setTimeout(pollStatus, 2500);
           }
         } catch (error) {
           console.error(error);
           statusCard.pill.textContent = 'Status unavailable';
           statusCard.pill.style.background = 'rgba(248, 113, 113, 0.15)';
+          statusCard.summary.textContent =
+            error instanceof Error ? error.message : String(error);
         }
       }
 
       function updateSummary(data) {
-        statusCard.hypothesisId.textContent = data.hypothesis_id ?? '—';
-        statusCard.workflowId.textContent = data.workflow_id ?? '—';
-        statusCard.conclusion.textContent = data.validation?.conclusion ?? '—';
-        statusCard.confidence.textContent = data.validation?.confidence
-          ? `${(data.validation.confidence * 100).toFixed(1)}%`
-          : '—';
         statusCard.summary.textContent = JSON.stringify(data, null, 2);
-        statusCard.milestones.replaceChildren();
-        const milestones = data.validation?.milestones ?? [];
-        milestones.forEach((milestone) => {
-          const row = document.createElement('div');
-          row.className = 'milestone';
-          const name = stageLabels[milestone.name] ?? milestone.name;
-          row.innerHTML = `<span>${name}</span><span>${milestone.status}</span>`;
-          statusCard.milestones.appendChild(row);
-        });
-        const waiting = milestones.some((milestone) => milestone.name === 'human_review' && milestone.status === 'waiting_review');
+        const stageState = buildStageState(data);
+        renderProgress(stageState);
+        const waiting = stageState.some((stage) => stage.name === 'human_review' && stage.status === 'waiting_review');
         statusCard.resumeControls.classList.toggle('hidden', !waiting);
         if (waiting) {
           statusCard.pill.textContent = 'Awaiting human review';
           statusCard.pill.style.background = 'rgba(251, 191, 36, 0.2)';
+        } else if (isWorkflowCancelled(data)) {
+          statusCard.pill.textContent = 'Cancelled';
+          statusCard.pill.style.background = 'rgba(248, 113, 113, 0.18)';
+        } else if (isWorkflowComplete(data)) {
+          statusCard.pill.textContent = 'Completed';
+          statusCard.pill.style.background = 'rgba(34, 197, 94, 0.15)';
+        } else if (currentHypothesisId) {
+          statusCard.pill.textContent = 'Processing…';
+          statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
         }
+        const showSummary = isWorkflowComplete(data) || isWorkflowCancelled(data);
+        statusCard.summaryDetails.classList.toggle('hidden', !showSummary);
+        if (!showSummary) {
+          statusCard.summaryDetails.open = false;
+        }
+        statusCard.stopButton.disabled = !shouldEnableStop(data);
+      }
+
+      function buildStageState(data) {
+        const milestones = data.validation?.milestones ?? [];
+        const milestoneMap = new Map(milestones.map((milestone) => [milestone.name, milestone]));
+        const currentStage = data.validation?.current_stage ?? null;
+        const stageSequence = [...baseStageOrder];
+        const requiresHumanReview = milestoneMap.has('human_review') || currentStage === 'human_review';
+        if (requiresHumanReview && !stageSequence.includes('human_review')) {
+          const deliveryIndex = stageSequence.indexOf('delivery');
+          const insertAt = deliveryIndex === -1 ? stageSequence.length : deliveryIndex;
+          stageSequence.splice(insertAt, 0, 'human_review');
+        }
+
+        const currentIndex = currentStage ? stageSequence.indexOf(currentStage) : -1;
+
+        return stageSequence.map((stage, index) => {
+          const milestone = milestoneMap.get(stage);
+          let status = 'pending';
+          if (milestone) {
+            status = String(milestone.status).toLowerCase();
+          } else if (currentStage === stage) {
+            status = 'running';
+          } else if (currentIndex !== -1 && index < currentIndex) {
+            status = 'completed';
+          }
+          return {
+            name: stage,
+            label: stageLabels[stage] ?? stage,
+            status,
+            detail: milestone?.detail ?? null,
+          };
+        });
+      }
+
+      function renderProgress(stageState) {
+        if (!stageState.length) {
+          statusCard.progressIndicator.style.width = '0%';
+          statusCard.progressPercent.textContent = '0%';
+          statusCard.progressSteps.replaceChildren();
+          statusCard.progressPanel.classList.remove('hidden');
+          return;
+        }
+
+        const totalStages = stageState.length;
+        let progressUnits = 0;
+        stageState.forEach(({ status }) => {
+          if (status === 'completed') {
+            progressUnits += 1;
+          } else if (status === 'running') {
+            progressUnits += 0.6;
+          } else if (status === 'waiting_review') {
+            progressUnits += 0.8;
+          }
+        });
+        const percentage = Math.min(100, Math.round((progressUnits / totalStages) * 100));
+        statusCard.progressIndicator.style.width = `${percentage}%`;
+        statusCard.progressPercent.textContent = `${percentage}%`;
+
+        statusCard.progressSteps.replaceChildren();
+        stageState.forEach((stage, index) => {
+          const step = document.createElement('div');
+          step.className = 'progress-step';
+          step.dataset.status = stage.status;
+          step.dataset.index = String(index + 1).padStart(2, '0');
+
+          const title = document.createElement('div');
+          title.className = 'progress-step-title';
+          title.textContent = stage.label;
+          step.appendChild(title);
+
+          const badge = document.createElement('div');
+          badge.className = 'progress-step-status';
+          badge.textContent = stage.status.replace('_', ' ');
+          step.appendChild(badge);
+
+          if (stage.detail) {
+            const detail = document.createElement('div');
+            detail.className = 'progress-step-detail';
+            detail.textContent = stage.detail;
+            step.appendChild(detail);
+          }
+
+          statusCard.progressSteps.appendChild(step);
+        });
+        statusCard.progressPanel.classList.remove('hidden');
+      }
+
+      function isWorkflowComplete(data) {
+        const milestones = data.validation?.milestones ?? [];
+        const delivery = milestones.find((milestone) => milestone.name === 'delivery');
+        return Boolean(delivery && String(delivery.status).toLowerCase() === 'completed');
+      }
+
+      function isWorkflowCancelled(data) {
+        const status = String(data.workflow_status ?? data.status ?? '').toUpperCase();
+        return status === 'CANCELLED';
+      }
+
+      function isWorkflowTerminal(data) {
+        const status = String(data.workflow_status ?? '').toUpperCase();
+        if (!status) return isWorkflowComplete(data) || isWorkflowCancelled(data);
+        return ['COMPLETED', 'FAILED', 'CANCELLED'].includes(status);
       }
 
       statusCard.resumeButton.addEventListener('click', async () => {
@@ -563,10 +857,13 @@
         try {
           const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/resume`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? ''),
             body: JSON.stringify({ decision: statusCard.resumeDecision.value }),
           });
-          if (!response.ok) throw new Error('Resume failed');
+          if (!response.ok) {
+            const detail = await safeReadDetail(response);
+            throw new Error(`Resume failed: ${response.status} ${detail}`);
+          }
           const data = await response.json();
           updateSummary(data);
           statusCard.pill.textContent = 'Review completed';
@@ -575,8 +872,63 @@
           console.error(error);
           statusCard.pill.textContent = 'Resume failed';
           statusCard.pill.style.background = 'rgba(248, 113, 113, 0.15)';
+          statusCard.summary.textContent =
+            error instanceof Error ? error.message : String(error);
         }
       });
+
+      statusCard.stopButton.addEventListener('click', async () => {
+        if (!currentHypothesisId) return;
+        statusCard.stopButton.disabled = true;
+        statusCard.pill.textContent = 'Stopping…';
+        statusCard.pill.style.background = 'rgba(248, 113, 113, 0.18)';
+        try {
+          const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/cancel`, {
+            method: 'POST',
+            headers: buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? ''),
+          });
+          if (!response.ok) {
+            const detail = await safeReadDetail(response);
+            throw new Error(`Cancel failed: ${response.status} ${detail}`);
+          }
+          const data = await response.json();
+          updateSummary(data);
+          statusCard.pill.textContent = 'Cancelled';
+          statusCard.pill.style.background = 'rgba(248, 113, 113, 0.18)';
+        } catch (error) {
+          console.error(error);
+          statusCard.pill.textContent = 'Cancel failed';
+          statusCard.pill.style.background = 'rgba(248, 113, 113, 0.25)';
+          statusCard.summary.textContent =
+            error instanceof Error ? error.message : String(error);
+          statusCard.stopButton.disabled = false;
+        }
+      });
+
+      function buildHeaders(apiKey) {
+        const headers = { 'Content-Type': 'application/json' };
+        if (apiKey) {
+          headers['x-api-key'] = apiKey;
+        }
+        return headers;
+      }
+
+      async function safeReadDetail(response) {
+        try {
+          const text = await response.text();
+          return text ? `- ${text}` : '';
+        } catch (readErr) {
+          console.error('Failed to read error response', readErr);
+          return '';
+        }
+      }
+
+      function shouldEnableStop(data) {
+        if (!currentHypothesisId) return false;
+        const status = String(data.workflow_status ?? data.status ?? '').toUpperCase();
+        if (!status) return true;
+        return !['COMPLETED', 'FAILED', 'CANCELLED'].includes(status);
+      }
     </script>
   </body>
 </html>

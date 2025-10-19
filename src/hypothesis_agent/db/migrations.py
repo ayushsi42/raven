@@ -21,9 +21,15 @@ def _alembic_config(database_url: str) -> Config:
     return alembic_config
 
 
+def upgrade_database_sync(database_url: str, revision: str = "head") -> None:
+    """Run Alembic migrations synchronously."""
+
+    config = _alembic_config(database_url)
+    command.upgrade(config, revision)
+
+
 async def upgrade_database(database_url: str, revision: str = "head") -> None:
     """Run Alembic migrations to the requested revision asynchronously."""
 
     loop = asyncio.get_running_loop()
-    config = _alembic_config(database_url)
-    await loop.run_in_executor(None, command.upgrade, config, revision)
+    await loop.run_in_executor(None, upgrade_database_sync, database_url, revision)

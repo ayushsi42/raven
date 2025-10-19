@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from hypothesis_agent.auth import require_api_key
@@ -34,7 +36,13 @@ async def submit_hypothesis(
 ) -> HypothesisResponse:
     """Accept a hypothesis submission and dispatch it to the workflow service."""
 
-    return await service.submit(hypothesis)
+    try:
+        return await service.submit(hypothesis)
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logging.getLogger(__name__).exception("Hypothesis submission failed")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 
 @api_router.get(
@@ -53,6 +61,11 @@ async def get_hypothesis(
     except KeyError as exc:
         detail = exc.args[0] if exc.args else "Hypothesis not found"
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=detail) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logging.getLogger(__name__).exception("Failed to retrieve hypothesis")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 
 @api_router.get(
@@ -71,6 +84,11 @@ async def get_hypothesis_report(
     except KeyError as exc:
         detail = exc.args[0] if exc.args else "Hypothesis not found"
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=detail) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logging.getLogger(__name__).exception("Failed to retrieve hypothesis report")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 
 @api_router.post(
@@ -90,6 +108,38 @@ async def resume_hypothesis(
     except KeyError as exc:
         detail = exc.args[0] if exc.args else "Hypothesis not found"
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=detail) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logging.getLogger(__name__).exception("Failed to resume hypothesis workflow")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+
+@api_router.post(
+    "/hypotheses/{hypothesis_id}/cancel",
+    response_model=HypothesisStatusResponse,
+    summary="Cancel a running hypothesis workflow",
+)
+async def cancel_hypothesis(
+    hypothesis_id: UUID,
+    service: HypothesisService = Depends(get_hypothesis_service),
+) -> HypothesisStatusResponse:
+    """Cancel a running hypothesis workflow and return the updated status."""
+
+    try:
+        return await service.cancel(hypothesis_id)
+    except KeyError as exc:
+        detail = exc.args[0] if exc.args else "Hypothesis not found"
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=detail) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logging.getLogger(__name__).exception("Failed to cancel hypothesis workflow")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 
 @api_router.get(
@@ -108,3 +158,8 @@ async def get_hypothesis_status(
     except KeyError as exc:
         detail = exc.args[0] if exc.args else "Hypothesis not found"
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=detail) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logging.getLogger(__name__).exception("Failed to retrieve hypothesis status")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc

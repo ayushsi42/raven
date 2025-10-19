@@ -50,6 +50,7 @@ class MilestoneStatus(str, Enum):
     COMPLETED = "completed"
     WAITING_REVIEW = "waiting_review"
     BLOCKED = "blocked"
+    CANCELLED = "cancelled"
 
 
 class WorkflowMilestone(BaseModel):

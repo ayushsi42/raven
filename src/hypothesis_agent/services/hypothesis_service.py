@@ -78,6 +78,8 @@ class HypothesisService:
         execution = await self.workflow_client.describe(record.workflow_id, record.workflow_run_id)
         validation = record.validation
         status = record.status
+        if execution.status == "CANCELLED":
+            status = "cancelled"
         if execution.milestones:
             current_stage = validation.current_stage
             running = next((m.name for m in execution.milestones if m.status == MilestoneStatus.RUNNING), None)
@@ -104,6 +106,12 @@ class HypothesisService:
             validation = final_summary
             if record.status not in {"needs_changes", "rejected"}:
                 status = "completed"
+        elif execution.status == "CANCELLED":
+            validation = await self.workflow_client.fetch_summary(
+                workflow_id=record.workflow_id,
+                workflow_run_id=record.workflow_run_id,
+            )
+            status = "cancelled"
 
         if status != record.status or validation != record.validation:
             updated = HypothesisRecord(
@@ -141,6 +149,8 @@ class HypothesisService:
         record = await self.repository.get(hypothesis_id)
         if record is None:
             raise KeyError(f"Hypothesis {hypothesis_id} not found")
+        if record.status == "cancelled":
+            raise RuntimeError("Cannot resume a cancelled workflow")
 
         summary = await self.workflow_client.resume(record.workflow_id, record.workflow_run_id, request.decision)
         if request.decision == "approved":
@@ -164,4 +174,37 @@ class HypothesisService:
             workflow_run_id=updated.workflow_run_id,
             status=updated.status,
             validation=summary,
+        )
+
+    async def cancel(self, hypothesis_id: UUID) -> HypothesisStatusResponse:
+        """Cancel an in-flight workflow and persist the cancellation state."""
+
+        record = await self.repository.get(hypothesis_id)
+        if record is None:
+            raise KeyError(f"Hypothesis {hypothesis_id} not found")
+
+        try:
+            summary = await self.workflow_client.cancel(record.workflow_id, record.workflow_run_id)
+        except RuntimeError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+        updated = HypothesisRecord(
+            hypothesis_id=record.hypothesis_id,
+            workflow_id=record.workflow_id,
+            workflow_run_id=record.workflow_run_id,
+            request=record.request,
+            status="cancelled",
+            validation=summary,
+        )
+        await self.repository.save(updated)
+
+        execution = await self.workflow_client.describe(record.workflow_id, record.workflow_run_id)
+        return HypothesisStatusResponse(
+            hypothesis_id=updated.hypothesis_id,
+            workflow_id=updated.workflow_id,
+            workflow_run_id=updated.workflow_run_id,
+            status="cancelled",
+            validation=summary,
+            workflow_status=execution.status,
+            workflow_history_length=execution.history_length,
         )

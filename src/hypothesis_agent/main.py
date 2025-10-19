@@ -1,6 +1,8 @@
 """FastAPI application entrypoint for the RAVEN hypothesis agent."""
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from starlette.responses import Response
 
@@ -35,20 +37,6 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     app_settings = settings or get_settings()
     configure_logging(app_settings.log_level)
 
-    application = FastAPI(
-        title="RAVEN Hypothesis Validation API",
-        version="0.1.0",
-        description="Accepts hypotheses for validation and orchestrates the RAVEN workflow.",
-    )
-    application.add_middleware(
-        RequestContextMiddleware,
-        recorder=_make_request_recorder(app_settings.enable_prometheus),
-    )
-
-    application.include_router(ui_router)
-    application.include_router(api_router, prefix=app_settings.api_prefix)
-    application.state.settings = app_settings
-
     database = Database.from_settings(app_settings)
     workflow_client = HypothesisWorkflowClient(
         namespace=app_settings.temporal_namespace,
@@ -57,28 +45,50 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         address=app_settings.temporal_address,
     )
     repository = SqlAlchemyHypothesisRepository(database.session_factory)
-
-    application.state.database = database
-    application.state.workflow_client = workflow_client
-    application.state.hypothesis_repository = repository
-    application.state.hypothesis_service = HypothesisService(
+    hypothesis_service = HypothesisService(
         repository=repository,
         workflow_client=workflow_client,
     )
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        app.state.settings = app_settings
+        app.state.database = database
+        app.state.workflow_client = workflow_client
+        app.state.hypothesis_repository = repository
+        app.state.hypothesis_service = hypothesis_service
+        await upgrade_database(app_settings.database_url)
+        try:
+            yield
+        finally:
+            await workflow_client.close()
+            await database.dispose()
+
+    application = FastAPI(
+        title="RAVEN Hypothesis Validation API",
+        version="0.1.0",
+        description="Accepts hypotheses for validation and orchestrates the RAVEN workflow.",
+        lifespan=lifespan,
+    )
+    application.add_middleware(
+        RequestContextMiddleware,
+        recorder=_make_request_recorder(app_settings.enable_prometheus),
+    )
+
+    application.include_router(ui_router)
+    application.include_router(api_router, prefix=app_settings.api_prefix)
+
+    # Expose core components immediately for compatibility with existing tests and tooling.
+    application.state.settings = app_settings
+    application.state.database = database
+    application.state.workflow_client = workflow_client
+    application.state.hypothesis_repository = repository
+    application.state.hypothesis_service = hypothesis_service
 
     if app_settings.enable_prometheus:
         @application.get("/metrics")
         async def metrics_endpoint() -> Response:
             return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
-    @application.on_event("startup")
-    async def on_startup() -> None:
-        await upgrade_database(app_settings.database_url)
-
-    @application.on_event("shutdown")
-    async def on_shutdown() -> None:
-        await workflow_client.close()
-        await database.dispose()
 
     return application
 

@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
-from openai import OpenAI
+from openai import BadRequestError, OpenAI
+logger = logging.getLogger(__name__)
 
 from hypothesis_agent.models.hypothesis import HypothesisRequest
 
@@ -55,7 +57,7 @@ class OpenAILLM(BaseLLM):
 
     api_key: str
     model: str
-    temperature: float = 0.2
+    temperature: float | None = 0.2
 
     def __post_init__(self) -> None:
         if not self.api_key:
@@ -77,7 +79,7 @@ class OpenAILLM(BaseLLM):
             )
         )
         content = self._chat(system_prompt, user_prompt)
-        return self._parse_list(content, fallback=["Collect price history", "Collect recent filings", "Collect news coverage"])
+        return self._parse_list(content)
 
     def generate_analysis_plan(
         self,
@@ -96,15 +98,7 @@ class OpenAILLM(BaseLLM):
             )
         )
         content = self._chat(system_prompt, user_prompt)
-        return self._parse_list(
-            content,
-            fallback=[
-                "Compute daily returns and volatility",
-                "Benchmark against sector indices",
-                "Aggregate news sentiment",
-                "Synthesize valuation indicators",
-            ],
-        )
+        return self._parse_list(content)
 
     def generate_detailed_analysis(
         self,
@@ -149,15 +143,33 @@ class OpenAILLM(BaseLLM):
         return payload
 
     def _chat(self, system_prompt: str, user_prompt: str) -> str:
+        kwargs = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        if self.temperature is not None:
+            kwargs["temperature"] = self.temperature
         try:
-            response = self._client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=self.temperature,
-            )
+            response = self._client.chat.completions.create(**kwargs)
+        except BadRequestError as exc:
+            message = str(exc)
+            if self.temperature is not None and "temperature" in message.lower():
+                logger.warning(
+                    "OpenAI model %s rejected temperature=%s; retrying with default",
+                    self.model,
+                    self.temperature,
+                )
+                self.temperature = None
+                kwargs.pop("temperature", None)
+                try:
+                    response = self._client.chat.completions.create(**kwargs)
+                except Exception as retry_exc:  # pragma: no cover - network failures
+                    raise LLMError("OpenAI request failed") from retry_exc
+            else:
+                raise LLMError("OpenAI request failed") from exc
         except Exception as exc:  # pragma: no cover - network failures
             raise LLMError("OpenAI request failed") from exc
 
@@ -174,11 +186,10 @@ class OpenAILLM(BaseLLM):
         except json.JSONDecodeError as exc:
             raise LLMError("LLM response was not valid JSON") from exc
 
-    def _parse_list(self, content: str, fallback: List[str]) -> List[str]:
-        try:
-            parsed = self._parse_json(content)
-        except LLMError:
-            return fallback
-        if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
-            return parsed
-        return fallback
+    def _parse_list(self, content: str) -> List[str]:
+        parsed = self._parse_json(content)
+        if not isinstance(parsed, list) or not parsed:
+            raise LLMError("LLM response must be a non-empty list of steps")
+        if not all(isinstance(item, str) and item.strip() for item in parsed):
+            raise LLMError("LLM response list entries must be non-empty strings")
+        return parsed
