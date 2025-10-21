@@ -1,0 +1,193 @@
+ALPHA_VANTAGE_COMPANY_OVERVIEW
+
+Description: Retrieves company overview and fundamental data for a given symbol.
+Input Format:
+apikey (optional): Override API key. Default is null.
+symbol: Ticker symbol to query (e.g., 'IBM').
+Output Format: JSON object containing company overview data.
+
+
+ALPHA_VANTAGE_CURRENCY_EXCHANGE_RATE
+
+Description: Retrieves real-time exchange rate for a currency pair.
+Input Format:
+apikey (optional): Override API key. Default is null.
+from_currency: Base currency code (e.g., 'USD').
+to_currency: Quote currency code (e.g., 'JPY').
+Output Format: JSON object containing exchange rate data.
+
+
+ALPHA_VANTAGE_FX_WEEKLY
+
+Description: Retrieves weekly time series (open, high, low, close) for a currency pair.
+Input Format:
+datatype (optional): Output format ('json' or 'csv'). Default is 'json'.
+from_symbol: Base currency code (e.g., 'EUR').
+to_symbol: Quote currency code (e.g., 'USD').
+Output Format: JSON object containing weekly FX data.
+
+
+ALPHA_VANTAGE_SYMBOL_SEARCH
+
+Description: Searches for best-matching symbols based on keywords.
+Input Format:
+apikey (optional): Override API key. Default is null.
+datatype (optional): Output format ('json' or 'csv'). Default is 'json'.
+keywords: Keywords to search for symbols (e.g., 'microsoft').
+Output Format: JSON object containing symbol search results.
+
+
+ALPHA_VANTAGE_TIME_SERIES_INTRADAY
+
+Description: Retrieves intraday OHLCV for a given equity.
+Input Format:
+adjusted (optional): Return adjusted values ('true' or 'false'). Default is 'true'.
+datatype (optional): Response format ('json' or 'csv'). Default is 'json'.
+extended_hours (optional): Include pre/post-market data ('true' or 'false'). Default is 'true'.
+interval: Time interval between data points (e.g., '1min').
+month (optional): Specific month in 'YYYY-MM' format.
+outputsize (optional): Return latest 100 points ('compact') or full-length data ('full'). Default is 'compact'.
+symbol: Equity ticker symbol (e.g., 'IBM').
+Output Format: JSON object containing intraday time series data.
+
+
+ALPHA_VANTAGE_TIME_SERIES_MONTHLY
+
+Description: Retrieves monthly open, high, low, close, and volume for a global equity.
+Input Format:
+apikey (optional): Override API key. Default is null.
+datatype (optional): Output format ('json' or 'csv'). Default is 'json'.
+symbol: Equity ticker symbol (e.g., 'IBM').
+Output Format: JSON object containing monthly time series data.
+
+
+ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED
+
+Description: Retrieves monthly adjusted OHLC and volume for a global equity.
+Input Format:
+apikey (optional): Override API key. Default is null.
+datatype (optional): Return format. Only 'json' is supported. Default is 'json'.
+symbol: Equity ticker symbol (e.g., 'IBM').
+Output Format: JSON object containing adjusted monthly time series data.
+
+
+ALPHA_VANTAGE_TIME_SERIES_WEEKLY
+
+Description: Retrieves weekly open, high, low, close, and volume for a global equity symbol.
+Input Format:
+apikey (optional): Override API key. Default is null.
+datatype (optional): Response format ('json' or 'csv'). Default is 'json'.
+symbol: Global equity symbol (e.g., 'IBM').
+Output Format: JSON object containing weekly time series data.
+
+
+ALPHA_VANTAGE_BALANCE_SHEET
+
+Description: Returns annual and quarterly balance sheets for a company.
+Input Format:
+symbol: Stock ticker symbol of the company (e.g., 'IBM').
+Output Format: JSON object containing balance sheet data.
+
+
+ALPHA_VANTAGE_CASH_FLOW
+
+Description: Returns annual and quarterly cash flow statements for a company.
+Input Format:
+symbol: Stock ticker symbol of the company (e.g., 'IBM').
+Output Format: JSON object containing cash flow data.
+
+
+ALPHA_VANTAGE_EARNINGS
+
+Description: Retrieves annual and quarterly earnings for a specific company symbol.
+Input Format:
+apikey (optional): Override API key. Default is null.
+symbol: Equity ticker symbol (e.g., 'IBM').
+Output Format: JSON object containing earnings data.
+
+
+ALPHA_VANTAGE_EARNINGS_CALENDAR
+
+Description: Returns the earnings calendar for the next three months.
+Input Format:
+horizon (optional): Time horizon ('3month', '6month', '12month'). Default is '3month'.
+symbol (optional): Ticker symbol to filter the earnings calendar (e.g., 'IBM').
+Output Format: JSON object containing earnings calendar data.
+
+
+ALPHA_VANTAGE_EARNINGS_CALL_TRANSCRIPT
+
+Description: Retrieves the earnings call transcript for a given company and quarter.
+Input Format:
+quarter: Fiscal quarter in YYYYQn format (e.g., '2024Q1').
+symbol: Stock ticker symbol (e.g., 'IBM').
+Output Format: JSON object containing the earnings call transcript.
+
+
+ALPHA_VANTAGE_IPO_CALENDAR
+
+Description: Retrieves the IPO calendar for the next three months.
+Input Format: None.
+Output Format: JSON object containing IPO calendar data.
+
+
+ALPHA_VANTAGE_LISTING_STATUS
+
+Description: Fetches listing status of US stocks and ETFs.
+Input Format:
+date (optional): Date to retrieve listing status (YYYY-MM-DD). Default is latest trading day.
+state (optional): Listing state ('active' or 'delisted'). Default is 'active'.
+Output Format: JSON object containing listing status data.
+
+
+ALPHA_VANTAGE_NEWS_SENTIMENT
+
+Description: Fetches live and historical market news & sentiment.
+Input Format:
+limit (optional): Maximum number of articles to return (1-1000). Default is 50.
+sort (optional): Sort order for articles ('LATEST', 'EARLIEST', or 'RELEVANCE'). Default is 'LATEST'.
+tickers (optional): Comma-separated tickers to filter articles (e.g., 'AAPL').
+time_from (optional): Start of time range (inclusive) in YYYYMMDDTHHMM format.
+time_to (optional): End of time range (inclusive) in YYYYMMDDTHHMM format. Default is current time.
+topics (optional): List of topics to filter articles.
+Output Format: JSON object containing news sentiment data.
+
+
+ALPHA_VANTAGE_REAL_GDP
+
+Description: Retrieves U.S. real GDP time series.
+Input Format:
+apikey (optional): Override API key. Default is null.
+datatype (optional): Output format ('json' or 'csv'). Default is 'json'.
+interval (optional): Data interval ('annual' or 'quarterly'). Default is 'annual'.
+Output Format: JSON object containing real GDP data.
+
+
+ALPHA_VANTAGE_SECTOR
+
+Description: Retrieves real-time and historical sector performance data.
+Input Format:
+apikey (optional): Override API key. Default is null.
+Output Format: JSON object containing sector performance data.
+
+
+ALPHA_VANTAGE_SPLITS
+
+Description: Retrieves historical stock split events for a symbol.
+Input Format:
+symbol: Stock ticker symbol (e.g., 'IBM').
+Output Format: JSON object containing split history data.
+
+
+ALPHA_VANTAGE_TECHNICAL_INDICATOR
+
+Description: Fetches technical indicators for the specified equity or currency pair.
+Input Format:
+datatype (optional): Output format ('json' or 'csv'). Default is 'json'.
+function: Technical indicator function name (e.g., 'SMA').
+interval: Time interval between data points.
+month (optional): Month (YYYY-MM) for intraday data.
+series_type: Series to use for calculation (price type).
+symbol: Equity ticker or currency/crypto pair to analyze.
+time_period: Number of periods for indicator calculation.
+Output Format: JSON object containing technical indicator data.

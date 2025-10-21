@@ -295,108 +295,11 @@
         box-shadow: 0 8px 18px rgba(59, 130, 246, 0.25);
       }
 
-      .progress-steps {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-        gap: 0.75rem;
-      }
-
-      .progress-step {
-        border-radius: 8px;
-        border: 1px solid var(--border);
-        padding: 0.75rem 0.9rem;
-        display: grid;
-        gap: 0.35rem;
-        background: rgba(255, 255, 255, 0.015);
-        transition: border-color 0.3s ease, background 0.3s ease, transform 0.3s ease;
-      }
-
-      .progress-step:hover {
-        transform: translateY(-1px);
-        border-color: var(--border-focus);
-        background: rgba(255, 255, 255, 0.03);
-      }
-
-      .progress-step::before {
-        content: attr(data-index);
-        font-size: 10px;
-        font-weight: 600;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--text-subtle);
-      }
-
-      .progress-step-title {
-        font-size: 13px;
-        font-weight: 500;
-        color: var(--text-primary);
-        letter-spacing: 0.01em;
-      }
-
-      .progress-step-detail {
-        font-size: 11px;
-        color: var(--text-subtle);
-        line-height: 1.4;
-      }
-
-      .progress-step-status {
-        font-size: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-weight: 600;
-        width: fit-content;
-        padding: 0.25rem 0.5rem;
-        border-radius: 999px;
-        border: 1px solid transparent;
-      }
-
-      .progress-step[data-status="completed"] {
-        border-color: rgba(34, 197, 94, 0.45);
-        background: rgba(34, 197, 94, 0.12);
-      }
-
-      .progress-step[data-status="completed"] .progress-step-status {
-        border-color: rgba(34, 197, 94, 0.4);
-        color: rgba(34, 197, 94, 0.85);
-        background: rgba(34, 197, 94, 0.15);
-      }
-
-      .progress-step[data-status="running"] {
-        border-color: rgba(59, 130, 246, 0.5);
-        background: rgba(59, 130, 246, 0.12);
-      }
-
-      .progress-step[data-status="running"] .progress-step-status {
-        border-color: rgba(59, 130, 246, 0.45);
-        color: rgba(59, 130, 246, 0.9);
-        background: rgba(59, 130, 246, 0.18);
-      }
-
-      .progress-step[data-status="waiting_review"] {
-        border-color: rgba(251, 191, 36, 0.45);
-        background: rgba(251, 191, 36, 0.12);
-      }
-
-      .progress-step[data-status="waiting_review"] .progress-step-status {
-        border-color: rgba(251, 191, 36, 0.4);
-        color: rgba(251, 191, 36, 0.9);
-        background: rgba(251, 191, 36, 0.18);
-      }
-
-      .progress-step[data-status="pending"] .progress-step-status {
-        border-color: var(--border);
-        color: var(--text-subtle);
-      }
-
-      .progress-step[data-status="cancelled"] {
-        border-color: rgba(248, 113, 113, 0.35);
-        background: rgba(248, 113, 113, 0.12);
-      }
-
-      .progress-step[data-status="cancelled"] .progress-step-status {
-        border-color: rgba(248, 113, 113, 0.4);
-        color: rgba(248, 113, 113, 0.9);
-        background: rgba(248, 113, 113, 0.15);
+      .progress-summary {
+        font-size: 12px;
+        color: var(--text-muted);
+        letter-spacing: 0.02em;
+        line-height: 1.6;
       }
 
       .pill {
@@ -689,9 +592,146 @@
         background-position: right 1rem center;
         padding-right: 2.5rem;
       }
+
+      .auth-overlay {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        backdrop-filter: blur(18px);
+        background: rgba(0, 0, 0, 0.7);
+        z-index: 1000;
+        padding: 2rem;
+      }
+
+      .auth-overlay.hidden {
+        display: none;
+      }
+
+      .auth-card {
+        width: min(420px, 100%);
+        padding: 2.5rem;
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        background: rgba(18, 18, 18, 0.9);
+        display: grid;
+        gap: 1.25rem;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+      }
+
+      .auth-card h2 {
+        margin: 0;
+        font-size: 1.4rem;
+        font-weight: 500;
+      }
+
+      .auth-card p {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.95rem;
+      }
+
+      .auth-actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+
+      .auth-card form {
+        display: grid;
+        gap: 1rem;
+      }
+
+      .auth-card label span {
+        font-size: 0.7rem;
+      }
+
+      .auth-error {
+        color: rgba(248, 113, 113, 0.9);
+        font-size: 0.85rem;
+      }
+
+      .auth-error.hidden {
+        display: none;
+      }
+
+      .google-button {
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.04);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+      }
+
+      .google-button::before {
+        content: "";
+        width: 18px;
+        height: 18px;
+        background-image: url("https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg");
+        background-size: contain;
+        background-repeat: no-repeat;
+      }
+
+      .auth-status {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 0.75rem;
+      }
+
+      .pill.small {
+        font-size: 11px;
+        padding: 0.35rem 0.75rem;
+      }
+
+      .text-button {
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        cursor: pointer;
+        padding: 0;
+      }
+
+      .text-button:hover {
+        color: var(--text-primary);
+      }
+
+      .text-button.hidden {
+        display: none;
+      }
     </style>
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-auth-compat.js"></script>
   </head>
-  <body data-api-base="{{ api_prefix }}">
+  <body data-api-base="{{ api_prefix }}" data-require-auth="{{ 'true' if require_authentication else 'false' }}">
+    <div id="auth-gate" class="auth-overlay hidden">
+      <div class="auth-card">
+        <h2>Sign in to continue</h2>
+        <p>Use your Firebase account to submit and review hypotheses.</p>
+        <form id="email-auth-form">
+          <label>
+            <span>Email</span>
+            <input type="email" id="auth-email" autocomplete="email" required />
+          </label>
+          <label>
+            <span>Password</span>
+            <input type="password" id="auth-password" autocomplete="current-password" required />
+          </label>
+          <div class="auth-actions">
+            <button type="submit" id="auth-signin">Sign In</button>
+            <button type="button" id="auth-register">Create Account</button>
+          </div>
+        </form>
+        <button type="button" id="google-signin" class="google-button">Continue with Google</button>
+        <p class="auth-error hidden" id="auth-error"></p>
+      </div>
+    </div>
+    <script id="firebase-config-data" type="application/json">{{ firebase_config | tojson }}</script>
     <div class="canvas">
       <header>
         <h1>RAVEN</h1>
@@ -700,6 +740,10 @@
           Temporal-style milestones. Track the orchestration in real-time, then inspect the fully audited
           validation summary.
         </p>
+        <div class="auth-status">
+          <span class="pill small" id="auth-user-chip">Guest</span>
+          <button type="button" id="sign-out-button" class="text-button hidden">Sign out</button>
+        </div>
       </header>
       <div class="content">
         <form id="hypothesis-form">
@@ -762,7 +806,7 @@
             <div class="progress-track">
               <div class="progress-indicator" id="progress-indicator"></div>
             </div>
-            <div class="progress-steps" id="progress-steps"></div>
+            <div class="progress-summary" id="progress-summary">No milestones yet.</div>
           </div>
           <button type="button" id="stop-button" class="button-destructive" disabled>Stop Workflow</button>
           <div id="resume-controls" class="hidden">
@@ -850,6 +894,12 @@
       </details>
     </div>
     <script>
+      const firebaseConfigElement = document.getElementById('firebase-config-data');
+      const firebaseConfig = firebaseConfigElement
+        ? JSON.parse(firebaseConfigElement.textContent || '{}')
+        : {};
+      const requireAuth = document.body.dataset.requireAuth === 'true';
+
       const form = document.getElementById('hypothesis-form');
       const statusCard = {
         pill: document.getElementById('status-pill'),
@@ -859,7 +909,7 @@
         resumeButton: document.getElementById('resume-button'),
         stopButton: document.getElementById('stop-button'),
         progressIndicator: document.getElementById('progress-indicator'),
-        progressSteps: document.getElementById('progress-steps'),
+  progressSummary: document.getElementById('progress-summary'),
         progressPercent: document.getElementById('progress-percentage'),
         progressPanel: document.getElementById('progress-panel'),
         apiKeyInput: document.querySelector('input[name="api_key"]'),
@@ -890,6 +940,210 @@
       const storedKey = window.localStorage.getItem(apiKeyStorageKey);
       if (storedKey && statusCard.apiKeyInput) {
         statusCard.apiKeyInput.value = storedKey;
+      }
+
+      const authGate = document.getElementById('auth-gate');
+      const authForm = document.getElementById('email-auth-form');
+      const authEmail = document.getElementById('auth-email');
+      const authPassword = document.getElementById('auth-password');
+      const authError = document.getElementById('auth-error');
+      const authRegisterButton = document.getElementById('auth-register');
+      const googleSignInButton = document.getElementById('google-signin');
+      const signOutButton = document.getElementById('sign-out-button');
+      const authUserChip = document.getElementById('auth-user-chip');
+
+      let firebaseApp = null;
+      let firebaseAuth = null;
+
+      if (requireAuth && authGate) {
+        authGate.classList.remove('hidden');
+      }
+
+      initialiseFirebase();
+
+      if (!requireAuth) {
+        updateAuthChip(null);
+      }
+
+      function initialiseFirebase() {
+        const hasConfig = firebaseConfig && Object.keys(firebaseConfig).length > 0;
+        if (typeof firebase === 'undefined' || !hasConfig) {
+          if (requireAuth) {
+            showAuthError(
+              hasConfig
+                ? 'Firebase SDK failed to load. Please refresh or contact support.'
+                : 'Authentication is required but Firebase web configuration is missing.'
+            );
+            setInteractivity(false);
+            if (authGate) authGate.classList.remove('hidden');
+          }
+          return;
+        }
+
+        try {
+          firebaseApp = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(firebaseConfig);
+          firebaseAuth = firebase.auth();
+          firebaseAuth.onAuthStateChanged(handleAuthStateChanged);
+        } catch (error) {
+          console.error('Failed to initialise Firebase', error);
+          firebaseAuth = null;
+          if (requireAuth) {
+            showAuthError('Authentication is unavailable. Verify Firebase settings.');
+            setInteractivity(false);
+            if (authGate) authGate.classList.remove('hidden');
+          }
+        }
+      }
+
+      function handleAuthStateChanged(user) {
+        clearAuthError();
+        updateAuthChip(user);
+        if (requireAuth) {
+          setInteractivity(Boolean(user));
+          if (authGate) {
+            authGate.classList.toggle('hidden', Boolean(user));
+          }
+        }
+      }
+
+      function updateAuthChip(user) {
+        const label = user && (user.displayName || user.email || user.uid);
+        if (authUserChip) {
+          authUserChip.textContent = label || 'Guest';
+        }
+        if (signOutButton) {
+          signOutButton.classList.toggle('hidden', !user);
+        }
+      }
+
+      function showAuthError(message) {
+        if (!authError) return;
+        authError.textContent = message;
+        authError.classList.remove('hidden');
+      }
+
+      function clearAuthError() {
+        if (!authError) return;
+        authError.textContent = '';
+        authError.classList.add('hidden');
+      }
+
+      function setInteractivity(enabled) {
+        if (!form) return;
+        const controls = form.querySelectorAll('input, textarea, select, button');
+        controls.forEach((control) => {
+          if (control === statusCard.stopButton || control === statusCard.resumeButton) {
+            return;
+          }
+          if (enabled) {
+            const previouslyDisabled = control.dataset.disabledBeforeAuth === 'true';
+            control.disabled = previouslyDisabled;
+            delete control.dataset.disabledBeforeAuth;
+          } else {
+            control.dataset.disabledBeforeAuth = control.disabled ? 'true' : 'false';
+            control.disabled = true;
+          }
+        });
+        if (statusCard.stopButton) {
+          if (enabled) {
+            const prev = statusCard.stopButton.dataset.disabledBeforeAuth === 'true';
+            statusCard.stopButton.disabled = prev;
+            delete statusCard.stopButton.dataset.disabledBeforeAuth;
+          } else {
+            statusCard.stopButton.dataset.disabledBeforeAuth = statusCard.stopButton.disabled ? 'true' : 'false';
+            statusCard.stopButton.disabled = true;
+          }
+        }
+        if (statusCard.resumeButton) {
+          if (enabled) {
+            const prev = statusCard.resumeButton.dataset.disabledBeforeAuth === 'true';
+            statusCard.resumeButton.disabled = prev;
+            delete statusCard.resumeButton.dataset.disabledBeforeAuth;
+          } else {
+            statusCard.resumeButton.dataset.disabledBeforeAuth = statusCard.resumeButton.disabled ? 'true' : 'false';
+            statusCard.resumeButton.disabled = true;
+          }
+        }
+      }
+
+      if (authForm) {
+        authForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          if (!firebaseAuth) {
+            showAuthError('Authentication is not configured.');
+            return;
+          }
+          const email = authEmail?.value?.trim();
+          const password = authPassword?.value?.trim();
+          if (!email || !password) {
+            showAuthError('Email and password are required.');
+            return;
+          }
+          try {
+            clearAuthError();
+            await firebaseAuth.signInWithEmailAndPassword(email, password);
+            authForm.reset();
+          } catch (error) {
+            console.error('Email sign-in failed', error);
+            showAuthError(error?.message || 'Unable to sign in with email and password.');
+          }
+        });
+      }
+
+      if (authRegisterButton) {
+        authRegisterButton.addEventListener('click', async () => {
+          if (!firebaseAuth) {
+            showAuthError('Authentication is not configured.');
+            return;
+          }
+          const email = authEmail?.value?.trim();
+          const password = authPassword?.value?.trim();
+          if (!email || !password) {
+            showAuthError('Email and password are required to register.');
+            return;
+          }
+          try {
+            clearAuthError();
+            await firebaseAuth.createUserWithEmailAndPassword(email, password);
+            authForm?.reset();
+          } catch (error) {
+            console.error('Registration failed', error);
+            showAuthError(error?.message || 'Unable to create account.');
+          }
+        });
+      }
+
+      if (googleSignInButton) {
+        googleSignInButton.addEventListener('click', async () => {
+          if (!firebaseAuth) {
+            showAuthError('Authentication is not configured.');
+            return;
+          }
+          try {
+            clearAuthError();
+            const provider = new firebase.auth.GoogleAuthProvider();
+            await firebaseAuth.signInWithPopup(provider);
+          } catch (error) {
+            console.error('Google sign-in failed', error);
+            showAuthError(error?.message || 'Unable to sign in with Google.');
+          }
+        });
+      }
+
+      if (signOutButton) {
+        signOutButton.addEventListener('click', async () => {
+          if (!firebaseAuth) {
+            updateAuthChip(null);
+            return;
+          }
+          try {
+            await firebaseAuth.signOut();
+          } catch (error) {
+            console.error('Sign-out failed', error);
+          } finally {
+            window.location.reload();
+          }
+        });
       }
 
       let finalReportLoadedFor = null;
@@ -945,9 +1199,10 @@
         };
 
         try {
+          const headers = await buildHeaders(apiKey);
           const response = await fetch(`${apiBase}/hypotheses`, {
             method: 'POST',
-            headers: buildHeaders(apiKey),
+            headers,
             body: JSON.stringify(payload),
           });
 
@@ -977,8 +1232,9 @@
         statusCard.pill.textContent = 'Processing…';
         statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
         try {
+          const headers = await buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? '');
           const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/status`, {
-            headers: buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? ''),
+            headers,
           });
           if (!response.ok) throw new Error('Failed to fetch status');
           const data = await response.json();
@@ -1063,7 +1319,9 @@
         if (!stageState.length) {
           statusCard.progressIndicator.style.width = '0%';
           statusCard.progressPercent.textContent = '0%';
-          statusCard.progressSteps.replaceChildren();
+          if (statusCard.progressSummary) {
+            statusCard.progressSummary.textContent = 'No milestones yet.';
+          }
           statusCard.progressPanel.classList.remove('hidden');
           return;
         }
@@ -1082,33 +1340,18 @@
         const percentage = Math.min(100, Math.round((progressUnits / totalStages) * 100));
         statusCard.progressIndicator.style.width = `${percentage}%`;
         statusCard.progressPercent.textContent = `${percentage}%`;
-
-        statusCard.progressSteps.replaceChildren();
-        stageState.forEach((stage, index) => {
-          const step = document.createElement('div');
-          step.className = 'progress-step';
-          step.dataset.status = stage.status;
-          step.dataset.index = String(index + 1).padStart(2, '0');
-
-          const title = document.createElement('div');
-          title.className = 'progress-step-title';
-          title.textContent = stage.label;
-          step.appendChild(title);
-
-          const badge = document.createElement('div');
-          badge.className = 'progress-step-status';
-          badge.textContent = stage.status.replace('_', ' ');
-          step.appendChild(badge);
-
-          if (stage.detail) {
-            const detail = document.createElement('div');
-            detail.className = 'progress-step-detail';
-            detail.textContent = stage.detail;
-            step.appendChild(detail);
+        if (statusCard.progressSummary) {
+          const completed = stageState.filter((stage) => stage.status === 'completed').length;
+          const active = stageState.find((stage) => stage.status === 'running' || stage.status === 'waiting_review');
+          let summary = `${completed}/${totalStages} stages complete`;
+          if (active) {
+            const verb = active.status === 'waiting_review' ? 'awaiting review' : 'in progress';
+            summary += ` • ${active.label} ${verb}`;
+          } else if (completed === totalStages) {
+            summary += ' • Workflow finished';
           }
-
-          statusCard.progressSteps.appendChild(step);
-        });
+          statusCard.progressSummary.textContent = summary;
+        }
         statusCard.progressPanel.classList.remove('hidden');
       }
 
@@ -1256,8 +1499,9 @@
           if (!currentHypothesisId) return;
           if (finalReportLoadedFor === currentHypothesisId) return;
           try {
+            const headers = await buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? '');
             const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/report`, {
-              headers: buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? ''),
+              headers,
             });
             if (!response.ok) return;
             const summary = await response.json();
@@ -1308,9 +1552,10 @@
         statusCard.pill.textContent = 'Submitting decision…';
         statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
         try {
+          const headers = await buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? '');
           const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/resume`, {
             method: 'POST',
-            headers: buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? ''),
+            headers,
             body: JSON.stringify({ decision: statusCard.resumeDecision.value }),
           });
           if (!response.ok) {
@@ -1340,9 +1585,10 @@
         statusCard.pill.textContent = 'Stopping…';
         statusCard.pill.style.background = 'rgba(248, 113, 113, 0.18)';
         try {
+          const headers = await buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? '');
           const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/cancel`, {
             method: 'POST',
-            headers: buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? ''),
+            headers,
           });
           if (!response.ok) {
             const detail = await safeReadDetail(response);
@@ -1365,10 +1611,20 @@
         }
       });
 
-      function buildHeaders(apiKey) {
+      async function buildHeaders(apiKey) {
         const headers = { 'Content-Type': 'application/json' };
         if (apiKey) {
           headers['x-api-key'] = apiKey;
+        }
+        if (firebaseAuth && firebaseAuth.currentUser) {
+          try {
+            const token = await firebaseAuth.currentUser.getIdToken();
+            if (token) {
+              headers.Authorization = `Bearer ${token}`;
+            }
+          } catch (error) {
+            console.error('Failed to fetch Firebase ID token', error);
+          }
         }
         return headers;
       }

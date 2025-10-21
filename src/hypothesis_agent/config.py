@@ -21,6 +21,7 @@ class AppSettings(BaseSettings):
     sec_user_agent: str = "RAVEN/0.1 (support@example.com)"
     notification_email: str | None = None
     api_key: str | None = None
+    require_authentication: bool = False
     enable_prometheus: bool = True
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
@@ -29,6 +30,14 @@ class AppSettings(BaseSettings):
     firebase_credentials_path: str | None = None
     firebase_collection: str = "hypotheses"
     firebase_app_name: str | None = None
+    firebase_auth_check_revoked: bool = False
+    firebase_web_api_key: str | None = None
+    firebase_web_auth_domain: str | None = None
+    firebase_web_storage_bucket: str | None = None
+    firebase_web_messaging_sender_id: str | None = None
+    firebase_web_app_id: str | None = None
+    firebase_web_measurement_id: str | None = None
+    use_firestore: bool = True
 
     model_config = SettingsConfigDict(env_prefix="RAVEN_", case_sensitive=False)
 

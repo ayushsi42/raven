@@ -22,6 +22,12 @@ from hypothesis_agent.workflows.hypothesis_workflow import (
 
 
 class _StubLLM(BaseLLM):
+    def generate_data_plan(self, request: HypothesisRequest) -> list[str]:
+        return ["Collect historical prices", "Gather filings", "Summarise news sentiment"]
+
+    def generate_analysis_plan(self, request: HypothesisRequest, data_overview: dict[str, object]) -> list[str]:
+        return ["Run price momentum", "Aggregate fundamentals", "Compile sentiment"]
+
     def generate_detailed_analysis(self, request: HypothesisRequest, metrics_overview: dict[str, object]) -> str:
         return "The hypothesis remains plausible given momentum, filings cadence, and sentiment balance."
 
@@ -38,6 +44,38 @@ class _StubLLM(BaseLLM):
             "risks": ["Macro slowdown"],
             "next_steps": ["Monitor earnings guidance"],
         }
+
+    def generate_analysis_code(
+        self,
+        *,
+        request: HypothesisRequest,
+        analysis_plan: list[dict[str, object]],
+        data_artifacts: dict[str, str],
+        attempt: int,
+        history: list[dict[str, str]],
+    ) -> str:
+        return (
+            """```python\n"""
+            "result = {\n"
+            "    \"steps\": [\n"
+            "        {\n"
+            "            \"name\": \"metric_snapshot\",\n"
+            "            \"outputs\": [\n"
+            "                {\"label\": \"Revenue Growth\", \"value\": 0.12},\n"
+            "                {\"label\": \"Sentiment Score\", \"value\": 0.2}\n"
+            "            ]\n"
+            "        }\n"
+            "    ],\n"
+            "    \"aggregated\": {\n"
+            "        \"revenue_growth\": 0.12,\n"
+            "        \"sentiment_score\": 0.2\n"
+            "    },\n"
+            "    \"insights\": [\"Revenue acceleration remains healthy.\"],\n"
+            "    \"artifacts\": []\n"
+            "}\n"
+            "print(\"RESULT::\" + json.dumps(result))\n"
+            "```"""
+        )
 
 
 STUB_TOOL_RESPONSES: dict[str, dict[str, object]] = {
@@ -192,12 +230,14 @@ async def test_workflow_client_handles_human_review() -> None:
 
     awaiting_execution = await _wait_for_status(client, result.workflow_id, result.workflow_run_id, "AWAITING_REVIEW")
     assert awaiting_execution.awaiting_review is True
-    assert awaiting_execution.milestones[-1].status == MilestoneStatus.WAITING_REVIEW
+    human_milestone = next(m for m in awaiting_execution.milestones if m.name == "human_review")
+    assert human_milestone.status == MilestoneStatus.WAITING_REVIEW
 
     final_summary = await client.resume(result.workflow_id, result.workflow_run_id, "approved")
     assert final_summary.current_stage == "delivery"
     assert final_summary.milestones[-1].name == "delivery"
-    assert final_summary.milestones[-2].status == MilestoneStatus.COMPLETED
+    human_milestone_after = next(m for m in final_summary.milestones if m.name == "human_review")
+    assert human_milestone_after.status == MilestoneStatus.COMPLETED
 
     execution_after = await _wait_for_status(client, result.workflow_id, result.workflow_run_id, "COMPLETED")
     assert execution_after.awaiting_review is False

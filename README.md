@@ -50,17 +50,14 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 
 # Required environment variables
-export RAVEN_OPENAI_API_KEY=<openai-key>
-export RAVEN_FIREBASE_CREDENTIALS_PATH=/path/to/service-account.json
-export RAVEN_FIREBASE_PROJECT_ID=<firebase-project>
-export RAVEN_NOTIFICATION_EMAIL=<you@firm.com>
-export RAVEN_ALPHA_VANTAGE_API_KEY=<alphavantage>
-export RAVEN_SEC_USER_AGENT="RAVEN/0.1 (you@firm.com)"
+set -a
+source .env
+set +a
 ```
 
 ### Run the Stack
 ```bash
-uvicorn hypothesis_agent.main:app --reload
+PYTHONPATH="src" uvicorn hypothesis_agent.main:app --reload
 ```
 
 Navigate to `http://localhost:8000/` for the live UI or hit the API directly under `/v1`.

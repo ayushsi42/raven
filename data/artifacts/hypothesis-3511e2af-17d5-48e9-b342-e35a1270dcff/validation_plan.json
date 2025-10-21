@@ -1,0 +1,153 @@
+{
+  "hypothesis": "Is apple profitable in 2025?",
+  "target_symbol": "AAPL",
+  "data_fetch_tools": [
+    {
+      "slug": "ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED",
+      "description": "Retrieves monthly adjusted OHLC and volume for a global equity.",
+      "arguments": {
+        "symbol": "AAPL"
+      },
+      "inputs": {
+        "apikey (optional)": "Override API key. Default is null.",
+        "datatype (optional)": "Return format. Only 'json' is supported. Default is 'json'.",
+        "symbol": "Equity ticker symbol (e.g., 'IBM')."
+      }
+    },
+    {
+      "slug": "ALPHA_VANTAGE_COMPANY_OVERVIEW",
+      "description": "Retrieves company overview and fundamental data for a given symbol.",
+      "arguments": {
+        "symbol": "AAPL"
+      },
+      "inputs": {
+        "apikey (optional)": "Override API key. Default is null.",
+        "symbol": "Ticker symbol to query (e.g., 'IBM')."
+      }
+    },
+    {
+      "slug": "ALPHA_VANTAGE_NEWS_SENTIMENT",
+      "description": "Fetches live and historical market news & sentiment.",
+      "arguments": {
+        "tickers": "AAPL"
+      },
+      "inputs": {
+        "limit (optional)": "Maximum number of articles to return (1-1000). Default is 50.",
+        "sort (optional)": "Sort order for articles ('LATEST', 'EARLIEST', or 'RELEVANCE'). Default is 'LATEST'.",
+        "tickers (optional)": "Comma-separated tickers to filter articles (e.g., 'AAPL').",
+        "time_from (optional)": "Start of time range (inclusive) in YYYYMMDDTHHMM format.",
+        "time_to (optional)": "End of time range (inclusive) in YYYYMMDDTHHMM format. Default is current time.",
+        "topics (optional)": "List of topics to filter articles."
+      }
+    },
+    {
+      "slug": "ALPHA_VANTAGE_CASH_FLOW",
+      "description": "Returns annual and quarterly cash flow statements for a company.",
+      "arguments": {
+        "symbol": "AAPL"
+      },
+      "inputs": {
+        "symbol": "Stock ticker symbol of the company (e.g., 'IBM')."
+      }
+    },
+    {
+      "slug": "ALPHA_VANTAGE_BALANCE_SHEET",
+      "description": "Returns annual and quarterly balance sheets for a company.",
+      "arguments": {
+        "symbol": "AAPL"
+      },
+      "inputs": {
+        "symbol": "Stock ticker symbol of the company (e.g., 'IBM')."
+      }
+    }
+  ],
+  "analysis_plan": [
+    {
+      "name": "price_trend_analysis",
+      "description": "Evaluate trailing price momentum and volatility for AAPL using monthly adjusted closes.",
+      "source_tools": [
+        "ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED"
+      ],
+      "operations": [
+        {
+          "operation": "percent_change",
+          "field": "5. adjusted close",
+          "periods": 12,
+          "label": "Trailing 12m adjusted close change"
+        },
+        {
+          "operation": "volatility",
+          "field": "5. adjusted close",
+          "periods": 12,
+          "label": "Annualized volatility (monthly)"
+        }
+      ]
+    },
+    {
+      "name": "profitability_snapshot",
+      "description": "Extract current profitability ratios from company overview.",
+      "source_tools": [
+        "ALPHA_VANTAGE_COMPANY_OVERVIEW"
+      ],
+      "operations": [
+        {
+          "operation": "latest_value",
+          "field": "OperatingMarginTTM",
+          "label": "Operating margin (TTM)"
+        },
+        {
+          "operation": "latest_value",
+          "field": "ProfitMargin",
+          "label": "Net profit margin"
+        }
+      ]
+    },
+    {
+      "name": "cash_flow_trend",
+      "description": "Assess annual operating cash flow momentum.",
+      "source_tools": [
+        "ALPHA_VANTAGE_CASH_FLOW"
+      ],
+      "operations": [
+        {
+          "operation": "yoy_change",
+          "field": "operatingCashflow",
+          "label": "YoY change in operating cash flow"
+        }
+      ]
+    },
+    {
+      "name": "balance_sheet_health",
+      "description": "Review leverage and liquidity from latest balance sheet.",
+      "source_tools": [
+        "ALPHA_VANTAGE_BALANCE_SHEET"
+      ],
+      "operations": [
+        {
+          "operation": "latest_value",
+          "field": "totalAssets",
+          "label": "Total assets (latest)"
+        },
+        {
+          "operation": "latest_value",
+          "field": "totalLiabilities",
+          "label": "Total liabilities (latest)"
+        }
+      ]
+    },
+    {
+      "name": "sentiment_monitor",
+      "description": "Summarize Alpha Vantage news sentiment feed.",
+      "source_tools": [
+        "ALPHA_VANTAGE_NEWS_SENTIMENT"
+      ],
+      "operations": [
+        {
+          "operation": "average_sentiment",
+          "field": "overall_sentiment_score",
+          "label": "Average sentiment"
+        }
+      ]
+    }
+  ]
+}

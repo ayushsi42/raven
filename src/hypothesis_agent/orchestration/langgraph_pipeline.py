@@ -12,8 +12,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, Sequence, cast
 
+import matplotlib
+
+# Use a headless backend for deterministic chart generation in tests and workers.
+matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 from composio import Composio
+from composio.client.enums import Action
 from composio.exceptions import ApiKeyNotProvidedError
 from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
@@ -102,10 +107,13 @@ class _ComposioTool:
         self._user_id = user_id
 
     def invoke(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        kwargs: Dict[str, Any] = {"slug": self._slug, "arguments": payload}
-        if self._user_id:
-            kwargs["user_id"] = self._user_id
-        response = self._client.tools.execute(**kwargs)
+        try:
+            action = getattr(Action, self._slug)
+        except AttributeError as exc:
+            raise RuntimeError(f"Composio tool '{self._slug}' is not recognised by the current SDK") from exc
+
+        entity_id = self._user_id or "default"
+        response = self._client.actions.execute(action=action, params=payload, entity_id=entity_id)
         if not response.get("successful", False):
             error = response.get("error") or "unknown error"
             raise RuntimeError(f"Composio tool '{self._slug}' execution failed: {error}")

@@ -58,33 +58,28 @@ class _StubLLM(BaseLLM):
             attempt: int,
             history: List[Dict[str, str]],
         ) -> str:
-            return """```python
-import json
-
-print('Inspecting artifacts:', list(DATA_ARTIFACTS.keys()))
-result = {
-    'steps': [
-        {
-            'name': 'stub_analysis',
-            'outputs': [
-                {'label': 'Trailing 12m Adjusted Close Change', 'value': 0.12},
-                {'label': 'Annualized Volatility (Monthly)', 'value': 0.18},
-                {'label': 'Average Sentiment', 'value': 0.2},
-                {'label': 'Operating Margin (TTM)', 'value': 0.25},
-            ],
-        }
-    ],
-    'aggregated': {
-        'trailing_12m_adjusted_close_change': 0.12,
-        'annualized_volatility_(monthly)': 0.18,
-        'average_sentiment': 0.2,
-        'operating_margin_(ttm)': 0.25,
-    },
-    'insights': ['Trailing 12m Adjusted Close Change: 12.00%'],
-    'artifacts': [],
-}
-print('RESULT::' + json.dumps(result))
-```"""
+            return (
+                """```python\n"""
+                "result = {\n"
+                "    \"steps\": [\n"
+                "        {\n"
+                "            \"name\": \"metric_snapshot\",\n"
+                "            \"outputs\": [\n"
+                "                {\"label\": \"Revenue Growth\", \"value\": 0.12},\n"
+                "                {\"label\": \"Sentiment Score\", \"value\": 0.2}\n"
+                "            ]\n"
+                "        }\n"
+                "    ],\n"
+                "    \"aggregated\": {\n"
+                "        \"revenue_growth\": 0.12,\n"
+                "        \"sentiment_score\": 0.2\n"
+                "    },\n"
+                "    \"insights\": [\"Revenue acceleration remains healthy.\"],\n"
+                "    \"artifacts\": []\n"
+                "}\n"
+                "print(\"RESULT::\" + json.dumps(result))\n"
+                "```"""
+            )
 
 
 STUB_TOOL_RESPONSES: Dict[str, Dict[str, Any]] = {

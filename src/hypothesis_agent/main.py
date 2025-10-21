@@ -14,7 +14,11 @@ from hypothesis_agent.config import AppSettings, get_settings
 from hypothesis_agent.db.firebase import FirebaseHandle, initialize_firebase
 from hypothesis_agent.logging import configure_logging
 from hypothesis_agent.metrics import record_request_metrics
-from hypothesis_agent.repositories.hypothesis_repository import FirestoreHypothesisRepository
+from hypothesis_agent.repositories.hypothesis_repository import (
+    FirestoreHypothesisRepository,
+    HypothesisRepository,
+    InMemoryHypothesisRepository,
+)
 from hypothesis_agent.services.hypothesis_service import HypothesisService
 from hypothesis_agent.telemetry import RequestContextMiddleware
 from hypothesis_agent.workflows.hypothesis_workflow import HypothesisWorkflowClient
@@ -36,14 +40,19 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     app_settings = settings or get_settings()
     configure_logging(app_settings.log_level)
 
-    firebase_handle: FirebaseHandle = initialize_firebase(app_settings)
+    firebase_handle: FirebaseHandle | None = None
+    repository: HypothesisRepository
+    if app_settings.use_firestore:
+        firebase_handle = initialize_firebase(app_settings)
+        repository = FirestoreHypothesisRepository(firebase_handle.client, firebase_handle.collection)
+    else:
+        repository = InMemoryHypothesisRepository()
     workflow_client = HypothesisWorkflowClient(
         namespace=app_settings.temporal_namespace,
         task_queue=app_settings.temporal_task_queue,
         workflow=app_settings.temporal_workflow,
         address=app_settings.temporal_address,
     )
-    repository = FirestoreHypothesisRepository(firebase_handle.client, firebase_handle.collection)
     hypothesis_service = HypothesisService(
         repository=repository,
         workflow_client=workflow_client,
@@ -60,7 +69,8 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             yield
         finally:
             await workflow_client.close()
-            await firebase_handle.dispose()
+            if firebase_handle is not None:
+                await firebase_handle.dispose()
 
     application = FastAPI(
         title="RAVEN Hypothesis Validation API",

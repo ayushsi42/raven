@@ -23,6 +23,12 @@ from hypothesis_agent.storage.artifact_store import ArtifactStore
 
 
 class _StubLLM(BaseLLM):
+    def generate_data_plan(self, request: HypothesisRequest) -> list[str]:
+        return ["Collect historical prices", "Gather earnings transcripts", "Pull sentiment data"]
+
+    def generate_analysis_plan(self, request: HypothesisRequest, data_overview: dict[str, object]) -> list[str]:
+        return ["Calculate price momentum", "Summarise sentiment signals", "Evaluate margin trends"]
+
     def generate_detailed_analysis(self, request: HypothesisRequest, metrics_overview: dict[str, object]) -> str:
         return "The hypothesis remains plausible given momentum, filings cadence, and sentiment balance."
 
@@ -39,6 +45,38 @@ class _StubLLM(BaseLLM):
             "risks": ["Macro slowdown"],
             "next_steps": ["Monitor earnings guidance"],
         }
+
+    def generate_analysis_code(
+        self,
+        *,
+        request: HypothesisRequest,
+        analysis_plan: list[dict[str, object]],
+        data_artifacts: dict[str, str],
+        attempt: int,
+        history: list[dict[str, str]],
+    ) -> str:
+        return (
+            """```python\n"""
+            "result = {\n"
+            "    \"steps\": [\n"
+            "        {\n"
+            "            \"name\": \"metric_snapshot\",\n"
+            "            \"outputs\": [\n"
+            "                {\"label\": \"Revenue Growth\", \"value\": 0.12},\n"
+            "                {\"label\": \"Sentiment Score\", \"value\": 0.2}\n"
+            "            ]\n"
+            "        }\n"
+            "    ],\n"
+            "    \"aggregated\": {\n"
+            "        \"revenue_growth\": 0.12,\n"
+            "        \"sentiment_score\": 0.2\n"
+            "    },\n"
+            "    \"insights\": [\"Revenue acceleration remains healthy.\"],\n"
+            "    \"artifacts\": []\n"
+            "}\n"
+            "print(\"RESULT::\" + json.dumps(result))\n"
+            "```"""
+        )
 
 
 STUB_TOOL_RESPONSES: dict[str, dict[str, object]] = {
@@ -158,6 +196,10 @@ async def test_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIter
     firebase_handle = _FakeFirebaseHandle()
     monkeypatch.setattr(
         "hypothesis_agent.db.firebase.initialize_firebase",
+        lambda settings: firebase_handle,
+    )
+    monkeypatch.setattr(
+        "hypothesis_agent.main.initialize_firebase",
         lambda settings: firebase_handle,
     )
     artifact_root = tmp_path / "artifacts"
