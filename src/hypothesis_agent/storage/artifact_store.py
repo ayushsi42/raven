@@ -37,6 +37,21 @@ class ArtifactStore:
         logger.debug("Persisted binary artifact %s", target)
         return target
 
+    def write_text(self, workflow_id: str, name: str, content: str, *, encoding: str = "utf-8") -> Path:
+        target = self._workflow_dir(workflow_id) / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding=encoding)
+        logger.debug("Persisted text artifact %s", target)
+        return target
+
+    def append_text(self, workflow_id: str, name: str, content: str, *, encoding: str = "utf-8") -> Path:
+        target = self._workflow_dir(workflow_id) / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("a", encoding=encoding) as handle:
+            handle.write(content)
+        logger.debug("Appended text artifact %s", target)
+        return target
+
     def _workflow_dir(self, workflow_id: str) -> Path:
         safe_id = workflow_id.replace("/", "_")
         return self.root / safe_id

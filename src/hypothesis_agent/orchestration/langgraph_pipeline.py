@@ -7,10 +7,12 @@ import math
 import re
 import statistics
 import traceback
-from contextlib import redirect_stderr, redirect_stdout
+import os
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, Sequence, cast
+import textwrap
 
 import matplotlib
 
@@ -18,10 +20,10 @@ import matplotlib
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 from composio import Composio
-from composio.client.enums import Action
 from composio.exceptions import ApiKeyNotProvidedError
 from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
+from langchain_experimental.utilities import PythonREPL
 
 from hypothesis_agent.config import AppSettings, get_settings
 from hypothesis_agent.llm import BaseLLM, LLMError, OpenAILLM
@@ -39,7 +41,7 @@ StageContext = Dict[str, Any]
 
 
 RESULT_PREFIX = "RESULT::"
-MAX_REPL_ATTEMPTS = 10
+MAX_REPL_ATTEMPTS = 5
 STDOUT_CHARACTER_LIMIT = 1600
 SAFE_BUILTINS = {
     "abs": abs,
@@ -107,13 +109,14 @@ class _ComposioTool:
         self._user_id = user_id
 
     def invoke(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        try:
-            action = getattr(Action, self._slug)
-        except AttributeError as exc:
-            raise RuntimeError(f"Composio tool '{self._slug}' is not recognised by the current SDK") from exc
+        kwargs: Dict[str, Any] = {
+            "slug": self._slug,
+            "arguments": payload,
+        }
+        if self._user_id:
+            kwargs["user_id"] = self._user_id
 
-        entity_id = self._user_id or "default"
-        response = self._client.actions.execute(action=action, params=payload, entity_id=entity_id)
+        response = self._client.tools.execute(**kwargs)
         if not response.get("successful", False):
             error = response.get("error") or "unknown error"
             raise RuntimeError(f"Composio tool '{self._slug}' execution failed: {error}")
@@ -171,21 +174,33 @@ class LangGraphValidationOrchestrator:
     # Public API
     # ------------------------------------------------------------------
     def run_stage(self, stage: str, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        stage = stage.lower()
+        stage_key = stage.lower()
         context = self._clone_context(context)
-        if stage == "plan_generation":
-            return self._run_plan_generation(request, context)
-        if stage == "data_collection":
-            return self._run_data_collection(request, context)
-        if stage == "hybrid_analysis":
-            return self._run_hybrid_analysis(request, context)
-        if stage == "detailed_analysis":
-            return self._run_detailed_analysis(request, context)
-        if stage == "report_generation":
-            return self._run_report_generation(request, context)
-        if stage == "delivery":
-            return self._run_delivery(request, context)
-        raise ValueError(f"Unknown validation stage '{stage}'")
+        self._append_workflow_log(context, f"Stage {stage_key} started.")
+        try:
+            if stage_key == "plan_generation":
+                result = self._run_plan_generation(request, context)
+            elif stage_key == "data_collection":
+                result = self._run_data_collection(request, context)
+            elif stage_key == "hybrid_analysis":
+                result = self._run_hybrid_analysis(request, context)
+            elif stage_key == "detailed_analysis":
+                result = self._run_detailed_analysis(request, context)
+            elif stage_key == "report_generation":
+                result = self._run_report_generation(request, context)
+            elif stage_key == "delivery":
+                result = self._run_delivery(request, context)
+            else:
+                raise ValueError(f"Unknown validation stage '{stage_key}'")
+        except Exception as exc:
+            try:
+                failure_message = str(exc).replace("\n", " ")
+                self._append_workflow_log(context, f"Stage {stage_key} failed: {failure_message}")
+            except Exception:  # pragma: no cover - defensive
+                pass
+            raise
+        self._append_workflow_log(result.context, f"Stage {stage_key} completed successfully.")
+        return result
 
     # ------------------------------------------------------------------
     # Stage implementations
@@ -200,14 +215,27 @@ class LangGraphValidationOrchestrator:
         )
         metadata = context.setdefault("metadata", {})
         metadata.setdefault("plan", {})["artifact"] = plan_path
+        data_tool_count = len(plan.get("data_fetch_tools", []))
+        analysis_step_count = len(plan.get("analysis_plan", []))
+        self._append_workflow_log(
+            context,
+            (
+                "Stage plan_generation completed; plan artifact {path} produced with "
+                "{data_tools} data tool(s) and {analysis_steps} analysis step(s)."
+            ).format(
+                path=plan_path,
+                data_tools=data_tool_count,
+                analysis_steps=analysis_step_count,
+            ),
+        )
         milestone = WorkflowMilestone(
             name="plan_generation",
             status=MilestoneStatus.COMPLETED,
             detail=self._format_plan_detail(plan),
         )
         evidence = [EvidenceReference(type="validation_plan", uri=plan_path)]
-        for ref in evidence:
-            self._record_evidence(context, ref)
+        self._record_evidence(context, evidence[0])
+        self._maybe_add_workflow_log_evidence(context, evidence)
         return StageExecutionResult(context=context, milestone=milestone, evidence=evidence)
 
     def _run_data_collection(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
@@ -260,11 +288,21 @@ class LangGraphValidationOrchestrator:
         context.setdefault("insights", []).append(
             f"Executed {len(executed)} Composio tools for data collection."
         )
+        self._append_workflow_log(
+            context,
+            (
+                "Stage data_collection completed; executed {count} tool(s) and saved artifacts to workflow {workflow}."
+            ).format(
+                count=len(executed),
+                workflow=workflow_id,
+            ),
+        )
         milestone = WorkflowMilestone(
             name="data_collection",
             status=MilestoneStatus.COMPLETED,
             detail=self._format_data_collection_detail(executed),
         )
+        self._maybe_add_workflow_log_evidence(context, evidence)
         return StageExecutionResult(context=context, milestone=milestone, evidence=evidence)
 
     def _run_hybrid_analysis(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
@@ -280,7 +318,7 @@ class LangGraphValidationOrchestrator:
         if not analysis_plan:
             raise RuntimeError("Analysis plan missing from validation plan output.")
 
-        analysis_result, attempt_history = self._execute_llm_analysis(
+        analysis_result, attempt_history, log_uri = self._execute_llm_analysis(
             workflow_id=workflow_id,
             request=request,
             analysis_plan=analysis_plan,
@@ -294,12 +332,28 @@ class LangGraphValidationOrchestrator:
             "insights": analysis_result.get("insights", []),
             "charts": charts,
             "history": attempt_history,
+            "log_uri": log_uri,
         }
         metrics_path = self.artifact_store.write_json(workflow_id, "analysis_metrics", analysis_payload).resolve().as_uri()
-        evidence = [EvidenceReference(type="analysis_metrics", uri=metrics_path)]
-        for ref in evidence:
-            self._record_evidence(context, ref)
+        evidence: List[EvidenceReference] = []
+        metrics_evidence = EvidenceReference(type="analysis_metrics", uri=metrics_path)
+        evidence.append(metrics_evidence)
+        self._record_evidence(context, metrics_evidence)
+        if log_uri:
+            attempt_evidence = EvidenceReference(type="analysis_attempt_log", uri=log_uri)
+            evidence.append(attempt_evidence)
+            self._record_evidence(context, attempt_evidence)
+        attempt_count = len(attempt_history)
+        log_message = (
+            "Stage hybrid_analysis completed after {attempts} attempt(s); metrics stored at {metrics}"
+        ).format(attempts=attempt_count, metrics=metrics_path)
+        if log_uri:
+            log_message += f"; attempt log captured at {log_uri}"
+        self._append_workflow_log(context, log_message + ".")
+        self._maybe_add_workflow_log_evidence(context, evidence)
         context["analysis_results"] = analysis_payload
+        if log_uri:
+            context["analysis_attempt_log"] = log_uri
         context.setdefault("insights", []).extend(analysis_payload.get("insights", [])[:3])
         milestone = WorkflowMilestone(
             name="hybrid_analysis",
@@ -323,12 +377,20 @@ class LangGraphValidationOrchestrator:
         }
         context["detailed_analysis"] = detailed_analysis
         context.setdefault("insights", []).append("LLM synthesized detailed narrative from computed metrics.")
+        self._append_workflow_log(
+            context,
+            (
+                "Stage detailed_analysis completed; narrative generated with {length} character(s)."
+            ).format(length=len(narrative)),
+        )
         milestone = WorkflowMilestone(
             name="detailed_analysis",
             status=MilestoneStatus.COMPLETED,
             detail="Narrative synthesis produced from hybrid analytics.",
         )
-        return StageExecutionResult(context=context, milestone=milestone)
+        evidence: List[EvidenceReference] = []
+        self._maybe_add_workflow_log_evidence(context, evidence)
+        return StageExecutionResult(context=context, milestone=milestone, evidence=evidence)
 
     def _run_report_generation(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
         workflow_id = self._ensure_workflow_id(context)
@@ -366,6 +428,12 @@ class LangGraphValidationOrchestrator:
         pdf_evidence = EvidenceReference(type="report_document", uri=pdf_path)
         self._record_evidence(context, pdf_evidence)
         score, confidence = self._score_validation(analysis_results)
+        self._append_workflow_log(
+            context,
+            (
+                "Stage report_generation completed; PDF report saved at {pdf} with conclusion score {score} and confidence {confidence}."
+            ).format(pdf=pdf_path, score=score, confidence=confidence),
+        )
         summary = ValidationSummary(
             score=score,
             conclusion=self._determine_conclusion(score),
@@ -379,7 +447,9 @@ class LangGraphValidationOrchestrator:
             status=MilestoneStatus.COMPLETED,
             detail="Investment memo compiled with quantitative backing.",
         )
-        return StageExecutionResult(context=context, milestone=milestone, evidence=[pdf_evidence], summary=summary)
+        evidence = [pdf_evidence]
+        self._maybe_add_workflow_log_evidence(context, evidence)
+        return StageExecutionResult(context=context, milestone=milestone, evidence=evidence, summary=summary)
 
     def _run_delivery(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
         report = context.get("report") or {}
@@ -399,12 +469,20 @@ class LangGraphValidationOrchestrator:
             report_payload=payload,
         )
         context.setdefault("insights", []).append(f"Report delivered to {recipient} via Composio tool router.")
+        self._append_workflow_log(
+            context,
+            (
+                "Stage delivery completed; report dispatched to {recipient}."
+            ).format(recipient=recipient),
+        )
         milestone = WorkflowMilestone(
             name="delivery",
             status=MilestoneStatus.COMPLETED,
             detail=f"Report emailed to {recipient}.",
         )
-        return StageExecutionResult(context=context, milestone=milestone)
+        evidence: List[EvidenceReference] = []
+        self._maybe_add_workflow_log_evidence(context, evidence)
+        return StageExecutionResult(context=context, milestone=milestone, evidence=evidence)
 
     # ------------------------------------------------------------------
     # Planning helpers
@@ -415,6 +493,31 @@ class LangGraphValidationOrchestrator:
         if not workflow_id:
             raise RuntimeError("Workflow metadata must include a workflow_id")
         return str(workflow_id)
+
+    def _append_workflow_log(self, context: StageContext, message: str) -> str:
+        workflow_id = self._ensure_workflow_id(context)
+        timestamp = datetime.utcnow().isoformat(timespec="seconds")
+        line = f"[{timestamp}] {message.rstrip()}\n"
+        path = self.artifact_store.append_text(workflow_id, "workflow.log", line)
+        log_uri = path.resolve().as_uri()
+        metadata = context.setdefault("metadata", {})
+        log_info = metadata.setdefault("workflow_log", {})
+        log_info["artifact"] = log_uri
+        context["workflow_log_uri"] = log_uri
+        return log_uri
+
+    def _maybe_add_workflow_log_evidence(
+        self, context: StageContext, evidence: List[EvidenceReference]
+    ) -> None:
+        metadata = context.setdefault("metadata", {})
+        log_info = metadata.setdefault("workflow_log", {})
+        log_uri = log_info.get("artifact")
+        if not log_uri or log_info.get("evidence_recorded"):
+            return
+        reference = EvidenceReference(type="workflow_log", uri=log_uri)
+        evidence.append(reference)
+        self._record_evidence(context, reference)
+        log_info["evidence_recorded"] = True
 
     def _build_validation_plan(self, request: HypothesisRequest) -> Dict[str, Any]:
         symbol = self._canonical_symbol(request.entities)
@@ -443,11 +546,15 @@ class LangGraphValidationOrchestrator:
             if any(item.get("slug") == slug for item in tools):
                 return
             definition = catalogue[slug]
+            enriched_arguments = dict(arguments)
+            composio_key = getattr(self.settings, "composio_api_key", None) or os.getenv("COMPOSIO_API_KEY")
+            if composio_key and any("apikey" in key.lower() for key in definition.inputs):
+                enriched_arguments.setdefault("apikey", composio_key)
             tools.append(
                 {
                     "slug": slug,
                     "description": definition.description,
-                    "arguments": arguments,
+                    "arguments": enriched_arguments,
                     "inputs": definition.inputs,
                 }
             )
@@ -651,7 +758,7 @@ class LangGraphValidationOrchestrator:
         request: HypothesisRequest,
         analysis_plan: List[Dict[str, Any]],
         data_sources: Dict[str, Dict[str, Any]],
-    ) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    ) -> tuple[Dict[str, Any], List[Dict[str, Any]], str]:
         artifact_map: Dict[str, str] = {}
         for slug, metadata in data_sources.items():
             uri = metadata.get("artifact_path") or metadata.get("uri")
@@ -664,6 +771,19 @@ class LangGraphValidationOrchestrator:
 
         history_records: List[Dict[str, Any]] = []
         prompt_history: List[Dict[str, str]] = []
+        log_entries: List[str] = []
+        log_uri: Optional[str] = None
+
+        def _persist_log() -> str:
+            nonlocal log_uri
+            log_text = "\n\n".join(log_entries) if log_entries else "No attempts recorded."
+            path = self.artifact_store.write_text(
+                workflow_id,
+                "hybrid_analysis_attempts.log",
+                log_text,
+            )
+            log_uri = path.resolve().as_uri()
+            return log_uri
 
         for attempt in range(1, MAX_REPL_ATTEMPTS + 1):
             response = self.llm.generate_analysis_code(
@@ -693,6 +813,29 @@ class LangGraphValidationOrchestrator:
                 record["feedback"] = self._tail_text(feedback, STDOUT_CHARACTER_LIMIT)
             history_records.append(record)
 
+            result_section = json.dumps(result_payload, indent=2) if result_payload is not None else "None"
+            feedback_section = feedback or "None"
+            entry_lines = [
+                f"Attempt {attempt} - {record_status.upper()}",
+                "=" * 80,
+                "Generated code:",
+                code.rstrip() or "<empty>",
+                "",
+                "STDOUT:",
+                (stdout_text.strip() or "<none>"),
+                "",
+                "STDERR:",
+                (stderr_text.strip() or "<none>"),
+                "",
+                "Feedback:",
+                feedback_section.strip() or "<none>",
+                "",
+                "Result payload:",
+                result_section,
+            ]
+            log_entries.append("\n".join(entry_lines))
+            _persist_log()
+
             prompt_history.append(
                 {
                     "attempt": str(attempt),
@@ -704,8 +847,9 @@ class LangGraphValidationOrchestrator:
             )
 
             if result_payload is not None:
-                return result_payload, history_records
+                return result_payload, history_records, log_uri or _persist_log()
 
+        _persist_log()
         raise RuntimeError("LLM analysis failed to produce a valid result after maximum retries")
 
     def _run_analysis_code(
@@ -715,26 +859,32 @@ class LangGraphValidationOrchestrator:
         artifact_map: Dict[str, str],
         workflow_id: str,
     ) -> tuple[str, str, Optional[Dict[str, Any]], Optional[str]]:
-        stdout_buffer = io.StringIO()
-        stderr_buffer = io.StringIO()
+        stdout_text = ""
+        stderr_text = ""
         result_payload: Optional[Dict[str, Any]] = None
         feedback: Optional[str] = None
 
-        environment = self._prepare_analysis_environment(workflow_id, artifact_map)
+        preamble = self._prepare_analysis_environment(workflow_id, artifact_map)
+        python_repl = PythonREPL()
 
         try:
-            with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-                exec(code, environment, {})
-        except Exception:
-            feedback = traceback.format_exc()
+            python_repl.run(preamble)
+        except Exception as exc:
+            error_message = f"Failed to initialise analysis runtime: {exc}"
+            feedback = error_message
+            return "", error_message, None, feedback
 
-        stdout_text = stdout_buffer.getvalue()
-        stderr_text = stderr_buffer.getvalue()
+        try:
+            stdout_text = python_repl.run(code)
+        except Exception as exc:
+            stderr_text = str(exc)
+            feedback = stderr_text or "Python REPL execution raised an exception"
 
         result_line: Optional[str] = None
         for line in stdout_text.splitlines():
             if line.startswith(RESULT_PREFIX):
                 result_line = line[len(RESULT_PREFIX) :].strip()
+                break
 
         if result_line is not None:
             try:
@@ -748,33 +898,37 @@ class LangGraphValidationOrchestrator:
 
         return stdout_text, stderr_text, result_payload, feedback
 
-    def _prepare_analysis_environment(self, workflow_id: str, artifact_map: Dict[str, str]) -> Dict[str, Any]:
+    def _prepare_analysis_environment(self, workflow_id: str, artifact_map: Dict[str, str]) -> str:
         workflow_dir = self.artifact_store.root / workflow_id.replace("/", "_")
         workflow_dir.mkdir(parents=True, exist_ok=True)
+        artifact_map_repr = repr(artifact_map)
+        workflow_dir_str = str(workflow_dir.resolve())
+        preamble = textwrap.dedent(
+            f"""
+            import json
+            import math
+            import statistics
+            from pathlib import Path
 
-        def load_json_artifact(slug: str) -> Any:
-            if slug not in artifact_map:
-                raise KeyError(f"Unknown data artifact slug: {slug}")
-            path = Path(artifact_map[slug])
-            with path.open("r", encoding="utf-8") as handle:
-                return json.load(handle)
+            DATA_ARTIFACTS = {artifact_map_repr}
+            ARTIFACT_OUTPUT_DIR = Path({workflow_dir_str!r})
+            RESULT_PREFIX = {RESULT_PREFIX!r}
 
-        def write_json_artifact(name: str, payload: Dict[str, Any]) -> str:
-            target = self.artifact_store.write_json(workflow_id, name, payload)
-            return str(target.resolve())
+            def load_json_artifact(slug: str):
+                if slug not in DATA_ARTIFACTS:
+                    raise KeyError(f"Unknown data artifact slug: {{slug}}")
+                path = Path(DATA_ARTIFACTS[slug])
+                with path.open("r", encoding="utf-8") as handle:
+                    return json.load(handle)
 
-        env: Dict[str, Any] = {
-            "__builtins__": SAFE_BUILTINS,
-            "json": json,
-            "math": math,
-            "statistics": statistics,
-            "Path": Path,
-            "DATA_ARTIFACTS": artifact_map,
-            "load_json_artifact": load_json_artifact,
-            "write_json_artifact": write_json_artifact,
-            "ARTIFACT_OUTPUT_DIR": str(workflow_dir),
-        }
-        return env
+            def write_json_artifact(name: str, payload):
+                target = ARTIFACT_OUTPUT_DIR / f"{{name}}.json"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                return str(target.resolve())
+            """
+        )
+        return preamble
 
     @staticmethod
     def _extract_python_code(response: str) -> str:

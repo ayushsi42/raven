@@ -26,6 +26,7 @@ class AppSettings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     composio_user_id: str = "0000-0000-0000"
+    composio_api_key: str | None = None
     firebase_project_id: str | None = None
     firebase_credentials_path: str | None = None
     firebase_collection: str = "hypotheses"

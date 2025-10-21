@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List
@@ -11,6 +12,7 @@ from openai import BadRequestError, OpenAI
 logger = logging.getLogger(__name__)
 
 from hypothesis_agent.models.hypothesis import HypothesisRequest
+from hypothesis_agent.metrics import LLMTelemetry, PIPELINE_TELEMETRY
 
 
 class LLMError(RuntimeError):
@@ -70,11 +72,14 @@ class OpenAILLM(BaseLLM):
     api_key: str
     model: str
     temperature: float | None = 0.2
+    telemetry: LLMTelemetry | None = None
 
     def __post_init__(self) -> None:
         if not self.api_key:
             raise LLMError("OpenAI API key is not configured")
         self._client = OpenAI(api_key=self.api_key)
+        if self.telemetry is None:
+            self.telemetry = PIPELINE_TELEMETRY
 
     def generate_data_plan(self, request: HypothesisRequest) -> List[str]:
         system_prompt = (
@@ -90,7 +95,7 @@ class OpenAILLM(BaseLLM):
                 end=request.time_horizon.end.isoformat(),
             )
         )
-        content = self._chat(system_prompt, user_prompt)
+        content = self._chat(system_prompt, user_prompt, operation="generate_data_plan")
         return self._parse_list(content)
 
     def generate_analysis_plan(
@@ -109,7 +114,7 @@ class OpenAILLM(BaseLLM):
                 overview=json.dumps(data_overview, ensure_ascii=False),
             )
         )
-        content = self._chat(system_prompt, user_prompt)
+        content = self._chat(system_prompt, user_prompt, operation="generate_analysis_plan")
         return self._parse_list(content)
 
     def generate_detailed_analysis(
@@ -127,7 +132,7 @@ class OpenAILLM(BaseLLM):
                 metrics=json.dumps(metrics_overview, ensure_ascii=False),
             )
         )
-        return self._chat(system_prompt, user_prompt)
+        return self._chat(system_prompt, user_prompt, operation="generate_detailed_analysis")
 
     def generate_report(
         self,
@@ -148,7 +153,7 @@ class OpenAILLM(BaseLLM):
                 artifacts=artifact_paths,
             )
         )
-        content = self._chat(system_prompt, user_prompt)
+        content = self._chat(system_prompt, user_prompt, operation="generate_report")
         payload = self._parse_json(content)
         if not isinstance(payload, dict):
             raise LLMError("Report generation returned non-dict response")
@@ -165,9 +170,10 @@ class OpenAILLM(BaseLLM):
     ) -> str:
         system_prompt = (
             "You are an autonomous quantitative analyst operating in a constrained Python REPL. "
-            "Write introspective code that inspects provided datasets, computes the requested analytics, and "
-            "prints the final dictionary using print(\"RESULT::\" + json.dumps(result, default=str)). "
-            "Respond only with Python code inside a fenced block; do not include commentary."
+            "Write straight-line, top-level Python (no function or class definitions) that inspects provided datasets, "
+            "computes the requested analytics, and prints the final dictionary using "
+            "print(\"RESULT::\" + json.dumps(result, default=str)). Respond only with Python code inside a "
+            "fenced block; do not include commentary."
         )
         user_payload = {
             "hypothesis": request.hypothesis_text,
@@ -177,9 +183,9 @@ class OpenAILLM(BaseLLM):
             "execution_history": history,
         }
         user_prompt = json.dumps(user_payload, ensure_ascii=False, indent=2)
-        return self._chat(system_prompt, user_prompt)
+        return self._chat(system_prompt, user_prompt, operation="generate_analysis_code")
 
-    def _chat(self, system_prompt: str, user_prompt: str) -> str:
+    def _chat(self, system_prompt: str, user_prompt: str, *, operation: str) -> str:
         kwargs = {
             "model": self.model,
             "messages": [
@@ -190,7 +196,9 @@ class OpenAILLM(BaseLLM):
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
         try:
+            start_time = time.perf_counter()
             response = self._client.chat.completions.create(**kwargs)
+            latency = time.perf_counter() - start_time
         except BadRequestError as exc:
             message = str(exc)
             if self.temperature is not None and "temperature" in message.lower():
@@ -202,7 +210,9 @@ class OpenAILLM(BaseLLM):
                 self.temperature = None
                 kwargs.pop("temperature", None)
                 try:
+                    start_time = time.perf_counter()
                     response = self._client.chat.completions.create(**kwargs)
+                    latency = time.perf_counter() - start_time
                 except Exception as retry_exc:  # pragma: no cover - network failures
                     raise LLMError("OpenAI request failed") from retry_exc
             else:
@@ -214,6 +224,20 @@ class OpenAILLM(BaseLLM):
             message = response.choices[0].message.content or ""
         except (AttributeError, IndexError) as exc:  # pragma: no cover - defensive
             raise LLMError("Malformed OpenAI response") from exc
+
+        if self.telemetry is not None:
+            usage = getattr(response, "usage", None)
+            prompt_tokens = getattr(usage, "prompt_tokens", None) if usage else None
+            completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
+            total_tokens = getattr(usage, "total_tokens", None) if usage else None
+            self.telemetry.record_llm_call(
+                operation=operation,
+                model=self.model,
+                latency_seconds=latency,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+            )
         return message.strip()
 
     @staticmethod

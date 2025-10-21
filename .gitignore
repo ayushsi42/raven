@@ -6,3 +6,4 @@ __pycache__/
 test.ipynb
 credentials.json
 .venv
+data
