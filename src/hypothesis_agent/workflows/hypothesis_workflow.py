@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 _PIPELINE_STAGES: List[str] = [
     "plan_generation",
     "data_collection",
-    "analysis_planning",
     "hybrid_analysis",
     "detailed_analysis",
     "report_generation",

@@ -50,6 +50,18 @@ class BaseLLM(ABC):
     ) -> Dict[str, Any]:  # pragma: no cover - interface
         """Return a structured report payload summarising the findings."""
 
+    @abstractmethod
+    def generate_analysis_code(
+        self,
+        *,
+        request: HypothesisRequest,
+        analysis_plan: List[Dict[str, Any]],
+        data_artifacts: Dict[str, str],
+        attempt: int,
+        history: List[Dict[str, str]],
+    ) -> str:  # pragma: no cover - interface
+        """Return Python source for executing the requested analysis."""
+
 
 @dataclass(slots=True)
 class OpenAILLM(BaseLLM):
@@ -141,6 +153,31 @@ class OpenAILLM(BaseLLM):
         if not isinstance(payload, dict):
             raise LLMError("Report generation returned non-dict response")
         return payload
+
+    def generate_analysis_code(
+        self,
+        *,
+        request: HypothesisRequest,
+        analysis_plan: List[Dict[str, Any]],
+        data_artifacts: Dict[str, str],
+        attempt: int,
+        history: List[Dict[str, str]],
+    ) -> str:
+        system_prompt = (
+            "You are an autonomous quantitative analyst operating in a constrained Python REPL. "
+            "Write introspective code that inspects provided datasets, computes the requested analytics, and "
+            "prints the final dictionary using print(\"RESULT::\" + json.dumps(result, default=str)). "
+            "Respond only with Python code inside a fenced block; do not include commentary."
+        )
+        user_payload = {
+            "hypothesis": request.hypothesis_text,
+            "attempt": attempt,
+            "analysis_plan": analysis_plan,
+            "data_artifacts": data_artifacts,
+            "execution_history": history,
+        }
+        user_prompt = json.dumps(user_payload, ensure_ascii=False, indent=2)
+        return self._chat(system_prompt, user_prompt)
 
     def _chat(self, system_prompt: str, user_prompt: str) -> str:
         kwargs = {

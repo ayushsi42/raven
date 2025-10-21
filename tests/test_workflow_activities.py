@@ -1,6 +1,7 @@
 """Unit tests for Temporal workflow activities."""
 from __future__ import annotations
 
+import copy
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -8,9 +9,6 @@ from typing import Any, Dict, List, Tuple
 import pytest
 
 from hypothesis_agent.config import AppSettings
-from hypothesis_agent.connectors.news import NewsArticle
-from hypothesis_agent.connectors.sec import FilingRecord
-from hypothesis_agent.connectors.yahoo import PriceSeries
 from hypothesis_agent.llm import BaseLLM
 from hypothesis_agent.models.hypothesis import HypothesisRequest, TimeHorizon
 from hypothesis_agent.orchestration.langgraph_pipeline import LangGraphValidationOrchestrator
@@ -18,7 +16,6 @@ from hypothesis_agent.storage.artifact_store import ArtifactStore
 from hypothesis_agent.workflows.activities import validation
 from hypothesis_agent.workflows.activities.validation import (
     await_human_review,
-    run_analysis_planning,
     run_data_collection,
     run_delivery,
     run_detailed_analysis,
@@ -29,78 +26,123 @@ from hypothesis_agent.workflows.activities.validation import (
 
 
 class _StubLLM(BaseLLM):
-    def generate_data_plan(self, request: HypothesisRequest) -> List[str]:
-        return [
-            "Fetch historical prices",
-            "Pull SEC filings",
-            "Aggregate relevant news",
-        ]
+        def generate_data_plan(self, request: HypothesisRequest) -> List[str]:
+            return ["Collect stub data"]
 
-    def generate_analysis_plan(self, request: HypothesisRequest, data_overview: Dict[str, Any]) -> List[str]:
-        return [
-            "Calculate returns and volatility",
-            "Summarize recent filings",
-            "Score sentiment dispersion",
-        ]
+        def generate_analysis_plan(self, request: HypothesisRequest, data_overview: Dict[str, Any]) -> List[str]:
+            return ["Run stub analysis"]
 
-    def generate_detailed_analysis(self, request: HypothesisRequest, metrics_overview: Dict[str, Any]) -> str:
-        return "The hypothesis remains plausible given momentum, filings cadence, and sentiment balance."
+        def generate_detailed_analysis(self, request: HypothesisRequest, metrics_overview: Dict[str, Any]) -> str:
+            return "The hypothesis remains plausible given momentum, filings cadence, and sentiment balance."
 
-    def generate_report(
-        self,
-        request: HypothesisRequest,
-        metrics_overview: Dict[str, Any],
-        analysis_summary: str,
-        artifact_paths: List[str],
-    ) -> Dict[str, Any]:
-        return {
-            "executive_summary": "Moderate support for the investment thesis.",
-            "key_findings": ["Momentum positive", "Filings cadence stable", "Sentiment constructive"],
-            "risks": ["Macro slowdown"],
-            "next_steps": ["Monitor earnings guidance"],
+        def generate_report(
+            self,
+            request: HypothesisRequest,
+            metrics_overview: Dict[str, Any],
+            analysis_summary: str,
+            artifact_paths: List[str],
+        ) -> Dict[str, Any]:
+            return {
+                "executive_summary": "Moderate support for the investment thesis.",
+                "key_findings": ["Momentum positive", "Filings cadence stable", "Sentiment constructive"],
+                "risks": ["Macro slowdown"],
+                "next_steps": ["Monitor earnings guidance"],
+            }
+
+        def generate_analysis_code(
+            self,
+            *,
+            request: HypothesisRequest,
+            analysis_plan: List[Dict[str, Any]],
+            data_artifacts: Dict[str, str],
+            attempt: int,
+            history: List[Dict[str, str]],
+        ) -> str:
+            return """```python
+import json
+
+print('Inspecting artifacts:', list(DATA_ARTIFACTS.keys()))
+result = {
+    'steps': [
+        {
+            'name': 'stub_analysis',
+            'outputs': [
+                {'label': 'Trailing 12m Adjusted Close Change', 'value': 0.12},
+                {'label': 'Annualized Volatility (Monthly)', 'value': 0.18},
+                {'label': 'Average Sentiment', 'value': 0.2},
+                {'label': 'Operating Margin (TTM)', 'value': 0.25},
+            ],
         }
+    ],
+    'aggregated': {
+        'trailing_12m_adjusted_close_change': 0.12,
+        'annualized_volatility_(monthly)': 0.18,
+        'average_sentiment': 0.2,
+        'operating_margin_(ttm)': 0.25,
+    },
+    'insights': ['Trailing 12m Adjusted Close Change: 12.00%'],
+    'artifacts': [],
+}
+print('RESULT::' + json.dumps(result))
+```"""
 
 
-class _StubYahoo:
-    def fetch_daily_prices(self, ticker: str, start: date, end: date) -> PriceSeries:
-        prices = [
-            {"date": "2025-01-01", "open": 100.0, "high": 102.0, "low": 99.0, "close": 101.0, "adj_close": 101.0, "volume": 1_000_000},
-            {"date": "2025-01-02", "open": 101.0, "high": 103.0, "low": 100.0, "close": 102.5, "adj_close": 102.5, "volume": 1_200_000},
-            {"date": "2025-01-03", "open": 102.5, "high": 104.0, "low": 101.5, "close": 103.5, "adj_close": 103.5, "volume": 1_100_000},
+STUB_TOOL_RESPONSES: Dict[str, Dict[str, Any]] = {
+    "ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED": {
+        "Monthly Adjusted Time Series": {
+            "2024-01-31": {"5. adjusted close": "100.0"},
+            "2024-02-29": {"5. adjusted close": "102.0"},
+            "2024-03-31": {"5. adjusted close": "104.5"},
+            "2024-04-30": {"5. adjusted close": "106.0"},
+            "2024-05-31": {"5. adjusted close": "108.5"},
+            "2024-06-30": {"5. adjusted close": "112.0"},
+        }
+    },
+    "ALPHA_VANTAGE_COMPANY_OVERVIEW": {
+        "OperatingMarginTTM": "0.21",
+        "ProfitMargin": "0.15",
+    },
+    "ALPHA_VANTAGE_NEWS_SENTIMENT": {
+        "feed": [
+            {"overall_sentiment_score": 0.3},
+            {"overall_sentiment_score": 0.1},
         ]
-        return PriceSeries(ticker=ticker, prices=prices)
-
-
-class _StubSec:
-    def fetch_recent_filings(self, ticker: str, limit: int = 5) -> List[FilingRecord]:
-        return [
-            FilingRecord(accession="0000001", filing_type="10-K", filed="2025-01-10", url="https://example.com/10k", company_name=f"{ticker} Inc"),
-            FilingRecord(accession="0000002", filing_type="10-Q", filed="2024-11-01", url="https://example.com/10q", company_name=f"{ticker} Inc"),
+    },
+    "ALPHA_VANTAGE_CASH_FLOW": {
+        "annualReports": [
+            {"operatingCashflow": "1200000"},
+            {"operatingCashflow": "900000"},
         ]
-
-
-class _StubNews:
-    def fetch_sentiment(self, tickers: List[str], limit: int = 5) -> List[NewsArticle]:
-        return [
-            NewsArticle(title="Growth outlook brightens", summary="", url="https://example.com/a", sentiment=0.4),
-            NewsArticle(title="New product launch", summary="", url="https://example.com/b", sentiment=0.2),
+    },
+    "ALPHA_VANTAGE_BALANCE_SHEET": {
+        "annualReports": [
+            {"totalAssets": "5000000", "totalLiabilities": "2100000"},
         ]
+    },
+    "gmail_send_email": {"status": "queued"},
+}
 
 
 class _StubTool:
-    def __init__(self, sink: List[Dict[str, Any]]) -> None:
+    def __init__(self, sink: List[Dict[str, Any]], slug: str, responses: Dict[str, Dict[str, Any]]) -> None:
         self._sink = sink
+        self._slug = slug
+        self._responses = responses
 
-    def invoke(self, payload: Dict[str, Any]) -> None:
-        self._sink.append(payload)
+    def invoke(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        record = {"slug": self._slug, "arguments": copy.deepcopy(payload)}
+        self._sink.append(record)
+        response = self._responses.get(self._slug, {"ok": True})
+        return copy.deepcopy(response)
 
 
 class _StubToolSet:
-    def __init__(self) -> None:
+    def __init__(self, responses: Dict[str, Dict[str, Any]]) -> None:
         self.invocations: List[Dict[str, Any]] = []
+        self._responses = responses
 
     def get_tool(self, name: str) -> _StubTool:
-        return _StubTool(self.invocations)
+        return _StubTool(self.invocations, name, self._responses)
 
 
 @pytest.fixture
@@ -110,13 +152,10 @@ def stub_orchestrator(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Tuple[
         artifact_store_path=str(tmp_path / "artifacts"),
     )
     artifact_store = ArtifactStore.from_path(settings.artifact_store_path)
-    toolset = _StubToolSet()
+    toolset = _StubToolSet(copy.deepcopy(STUB_TOOL_RESPONSES))
     orchestrator = LangGraphValidationOrchestrator(
         settings=settings,
         llm=_StubLLM(),
-        yahoo_client=_StubYahoo(),
-        sec_client=_StubSec(),
-        news_client=_StubNews(),
         artifact_store=artifact_store,
         toolset=toolset,
     )
@@ -140,7 +179,6 @@ async def test_pipeline_stages_execute(stub_orchestrator) -> None:
     for activity in [
         run_plan_generation,
         run_data_collection,
-        run_analysis_planning,
         run_hybrid_analysis,
         run_detailed_analysis,
     ]:
@@ -182,7 +220,10 @@ async def test_pipeline_stages_execute(stub_orchestrator) -> None:
 
     pdf_path = Path(context["report"]["pdf_path"].replace("file://", ""))
     assert pdf_path.exists()
-    assert toolset.invocations and toolset.invocations[0]["attachments"][0] == str(pdf_path)
+    fetch_slugs = {call["slug"] for call in toolset.invocations if call["slug"].startswith("ALPHA_VANTAGE")}
+    assert "ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED" in fetch_slugs
+    email_calls = [call for call in toolset.invocations if call["slug"] == "gmail_send_email"]
+    assert email_calls and str(pdf_path) in email_calls[0]["arguments"].get("attachments", [])
     assert summary["score"] >= 0.0
     assert summary["confidence"] >= 0.0
     assert milestones[-1]["name"] == "delivery"

@@ -16,7 +16,6 @@ class AppSettings(BaseSettings):
     temporal_task_queue: str = "raven-hypothesis"
     temporal_address: str = "localhost:7233"
     temporal_workflow: str = "HypothesisValidationWorkflow"
-    database_url: str = "sqlite+aiosqlite:///./raven.db"
     artifact_store_path: str = "./data/artifacts"
     alpha_vantage_api_key: str = "demo"
     sec_user_agent: str = "RAVEN/0.1 (support@example.com)"
@@ -25,6 +24,11 @@ class AppSettings(BaseSettings):
     enable_prometheus: bool = True
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
+    composio_user_id: str = "0000-0000-0000"
+    firebase_project_id: str | None = None
+    firebase_credentials_path: str | None = None
+    firebase_collection: str = "hypotheses"
+    firebase_app_name: str | None = None
 
     model_config = SettingsConfigDict(env_prefix="RAVEN_", case_sensitive=False)
 

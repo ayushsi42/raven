@@ -1,15 +1,12 @@
 """Repository abstractions for hypothesis records."""
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-from hypothesis_agent.db.models import HypothesisRecordModel
 from hypothesis_agent.models.hypothesis import HypothesisRequest, ValidationSummary
 
 
@@ -52,39 +49,49 @@ class InMemoryHypothesisRepository(HypothesisRepository):
         return self._storage.get(hypothesis_id)
 
 
-class SqlAlchemyHypothesisRepository(HypothesisRepository):
-    """SQLAlchemy-backed repository for hypothesis records."""
+class FirestoreHypothesisRepository(HypothesisRepository):
+    """Firestore-backed repository for hypothesis records."""
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
-        self._session_factory = session_factory
+    def __init__(self, client: Any, collection: str = "hypotheses") -> None:
+        self._client = client
+        self._collection = collection
 
     async def save(self, record: HypothesisRecord) -> None:
-        async with self._session_factory() as session:
-            await session.merge(
-                HypothesisRecordModel(
-                    id=str(record.hypothesis_id),
-                    user_id=record.request.user_id,
-                    payload=record.request.model_dump(mode="json"),
-                    status=record.status,
-                    validation=record.validation.model_dump(mode="json"),
-                    workflow_id=record.workflow_id,
-                    workflow_run_id=record.workflow_run_id,
-                )
-            )
-            await session.commit()
+        payload = {
+            "workflow_id": record.workflow_id,
+            "workflow_run_id": record.workflow_run_id,
+            "request": record.request.model_dump(mode="json"),
+            "status": record.status,
+            "validation": record.validation.model_dump(mode="json"),
+        }
+
+        def _write() -> None:
+            self._client.collection(self._collection).document(str(record.hypothesis_id)).set(payload)
+
+        await asyncio.to_thread(_write)
 
     async def get(self, hypothesis_id: UUID) -> Optional[HypothesisRecord]:
-        async with self._session_factory() as session:
-            stmt = select(HypothesisRecordModel).where(HypothesisRecordModel.id == str(hypothesis_id))
-            result = await session.execute(stmt)
-            row = result.scalar_one_or_none()
-            if row is None:
-                return None
-            return HypothesisRecord(
-                hypothesis_id=hypothesis_id,
-                workflow_id=row.workflow_id,
-                workflow_run_id=row.workflow_run_id,
-                request=HypothesisRequest.model_validate(row.payload),
-                status=row.status,
-                validation=ValidationSummary.model_validate(row.validation),
-            )
+        def _read() -> Any:
+            return self._client.collection(self._collection).document(str(hypothesis_id)).get()
+
+        snapshot = await asyncio.to_thread(_read)
+        if snapshot is None or not getattr(snapshot, "exists", False):
+            return None
+
+        data = snapshot.to_dict() or {}
+        if not data:
+            return None
+
+        request_payload = data.get("request")
+        validation_payload = data.get("validation")
+        if not request_payload or not validation_payload:
+            return None
+
+        return HypothesisRecord(
+            hypothesis_id=hypothesis_id,
+            workflow_id=data.get("workflow_id", ""),
+            workflow_run_id=data.get("workflow_run_id", ""),
+            request=HypothesisRequest.model_validate(request_payload),
+            status=data.get("status", "unknown"),
+            validation=ValidationSummary.model_validate(validation_payload),
+        )

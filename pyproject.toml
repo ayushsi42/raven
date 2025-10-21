@@ -8,9 +8,6 @@ dependencies = [
     "fastapi>=0.111,<0.112",
     "pydantic>=2.7,<3",
     "pydantic-settings>=2.2,<3",
-    "sqlalchemy[asyncio]>=2.0,<3",
-    "aiosqlite>=0.19,<1",
-    "alembic>=1.13,<2",
     "uvicorn[standard]>=0.30,<0.31",
     "langgraph>=0.0.52,<0.1",
     "composio-langchain>=0.4,<0.5",
@@ -23,7 +20,7 @@ dependencies = [
     "openai>=1.12,<2",
     "matplotlib>=3.8,<4",
     "reportlab>=4.1,<5",
-    "yfinance>=0.2,<0.3"
+    "firebase-admin>=6.5,<7"
 ]
 
 [project.optional-dependencies]

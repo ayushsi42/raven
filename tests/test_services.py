@@ -26,7 +26,6 @@ def _make_validation_summary() -> ValidationSummary:
     milestones = [
         WorkflowMilestone(name="plan_generation", status=MilestoneStatus.COMPLETED, detail="Plan generated."),
         WorkflowMilestone(name="data_collection", status=MilestoneStatus.COMPLETED, detail="Data collected."),
-        WorkflowMilestone(name="analysis_planning", status=MilestoneStatus.COMPLETED, detail="Analysis plan drafted."),
         WorkflowMilestone(name="hybrid_analysis", status=MilestoneStatus.COMPLETED, detail="Hybrid analytics complete."),
         WorkflowMilestone(name="detailed_analysis", status=MilestoneStatus.COMPLETED, detail="Narrative synthesized."),
         WorkflowMilestone(name="report_generation", status=MilestoneStatus.COMPLETED, detail="Report compiled."),
@@ -97,7 +96,7 @@ async def test_service_submit_persists_and_returns_response() -> None:
     assert status.workflow_status == "RUNNING"
     assert status.workflow_history_length == 10
     assert status.validation.current_stage == "delivery"
-    assert len(status.validation.milestones) == 8
+    assert len(status.validation.milestones) == 7
 
 
 @pytest.mark.asyncio

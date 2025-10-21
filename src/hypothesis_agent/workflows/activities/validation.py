@@ -56,15 +56,9 @@ async def run_plan_generation(payload: Dict) -> Dict:
 
 
 async def run_data_collection(payload: Dict) -> Dict:
-    """Collect live datasets using finance and news connectors."""
+    """Collect live datasets using pipeline-configured Composio tools."""
 
     return _load_orchestrator_result("data_collection", payload)
-
-
-async def run_analysis_planning(payload: Dict) -> Dict:
-    """Draft the quantitative analysis plan from collected data summaries."""
-
-    return _load_orchestrator_result("analysis_planning", payload)
 
 
 async def run_hybrid_analysis(payload: Dict) -> Dict:

@@ -415,6 +415,197 @@
         width: fit-content;
       }
 
+      .insight-panel {
+        display: grid;
+        gap: 1.75rem;
+        margin-top: 1rem;
+        padding: 1.75rem 2rem;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .metric-grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+
+      .metric-card {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        background: rgba(0, 0, 0, 0.2);
+        display: grid;
+        gap: 0.4rem;
+      }
+
+      .metric-label {
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-subtle);
+        font-weight: 500;
+      }
+
+      .metric-value {
+        font-size: 1.75rem;
+        font-weight: 400;
+        letter-spacing: -0.01em;
+      }
+
+      .metric-subtext {
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1.25rem 1.5rem;
+        background: rgba(0, 0, 0, 0.16);
+        display: grid;
+        gap: 1rem;
+      }
+
+      .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .panel-header h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+      }
+
+      .meta-grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .meta-item {
+        display: grid;
+        gap: 0.3rem;
+      }
+
+      .meta-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-subtle);
+        font-weight: 500;
+      }
+
+      .meta-value {
+        font-size: 13px;
+        color: var(--text-primary);
+        word-break: break-word;
+      }
+
+      .meta-actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+
+      .tag {
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        padding: 0.25rem 0.75rem;
+        font-size: 11px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      .timeline-list {
+        display: grid;
+        gap: 0.75rem;
+      }
+
+      .timeline-item {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 0.9rem 1rem;
+        background: rgba(255, 255, 255, 0.02);
+        display: grid;
+        gap: 0.45rem;
+      }
+
+      .timeline-title {
+        font-size: 0.95rem;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+      }
+
+      .timeline-detail {
+        font-size: 12px;
+        color: var(--text-muted);
+        line-height: 1.6;
+      }
+
+      .timeline-item[data-status="completed"] {
+        border-color: rgba(34, 197, 94, 0.35);
+        background: rgba(34, 197, 94, 0.08);
+      }
+
+      .timeline-item[data-status="running"] {
+        border-color: rgba(59, 130, 246, 0.35);
+        background: rgba(59, 130, 246, 0.08);
+      }
+
+      .timeline-item[data-status="waiting_review"] {
+        border-color: rgba(251, 191, 36, 0.35);
+        background: rgba(251, 191, 36, 0.08);
+      }
+
+      .timeline-item[data-status="cancelled"] {
+        border-color: rgba(248, 113, 113, 0.35);
+        background: rgba(248, 113, 113, 0.08);
+      }
+
+      .evidence-list {
+        display: grid;
+        gap: 0.85rem;
+      }
+
+      .evidence-item {
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        padding: 0.85rem 1rem;
+        background: rgba(255, 255, 255, 0.02);
+        display: grid;
+        gap: 0.35rem;
+      }
+
+      .evidence-type {
+        font-size: 0.9rem;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+      }
+
+      .evidence-uri {
+        font-size: 12px;
+        color: var(--text-muted);
+        word-break: break-all;
+      }
+
+      .evidence-actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+
+      .empty-state {
+        color: var(--text-subtle);
+        font-size: 12px;
+      }
+
       details.report-summary {
         border: 1px solid var(--border);
         border-radius: 8px;
@@ -590,6 +781,69 @@
           </div>
         </aside>
       </div>
+      <section class="insight-panel hidden" id="insight-panel">
+        <div class="metric-grid">
+          <div class="metric-card">
+            <div class="metric-label">Score</div>
+            <div class="metric-value" id="metric-score">&mdash;</div>
+            <div class="metric-subtext" id="metric-conclusion">Pending validation</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Confidence</div>
+            <div class="metric-value" id="metric-confidence">&mdash;</div>
+            <div class="metric-subtext">Probability-weighted conviction</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Current Stage</div>
+            <div class="metric-value" id="metric-stage">&mdash;</div>
+            <div class="metric-subtext">Workflow progression</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Workflow Status</div>
+            <div class="metric-value" id="metric-workflow-status">&mdash;</div>
+            <div class="metric-subtext">Latest execution state</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Workflow Metadata</h3>
+            <span class="tag" id="meta-status">Awaiting submission</span>
+          </div>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Hypothesis ID</span>
+              <span class="meta-value" id="meta-hypothesis-id">&mdash;</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Workflow ID</span>
+              <span class="meta-value" id="meta-workflow-id">&mdash;</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Run ID</span>
+              <span class="meta-value" id="meta-workflow-run-id">&mdash;</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Last Updated</span>
+              <span class="meta-value" id="meta-updated">&mdash;</span>
+            </div>
+          </div>
+          <div class="meta-actions hidden" id="report-download-wrapper">
+            <a id="report-download" class="pill" href="#" target="_blank" rel="noopener">Download Report</a>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Milestones</h3>
+          </div>
+          <div class="timeline-list empty-state" id="milestone-table">No milestones yet.</div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Evidence</h3>
+          </div>
+          <div class="evidence-list empty-state" id="evidence-list">No evidence captured yet.</div>
+        </div>
+      </section>
       <details class="report-summary hidden" id="summary-details">
         <summary>Validation Summary</summary>
         <pre id="summary-json">Submit a hypothesis to see the validation report.</pre>
@@ -612,6 +866,24 @@
         summaryDetails: document.getElementById('summary-details'),
       };
 
+      const dashboard = {
+        container: document.getElementById('insight-panel'),
+        metricScore: document.getElementById('metric-score'),
+        metricConfidence: document.getElementById('metric-confidence'),
+        metricConclusion: document.getElementById('metric-conclusion'),
+        metricStage: document.getElementById('metric-stage'),
+        metricWorkflowStatus: document.getElementById('metric-workflow-status'),
+        metaStatus: document.getElementById('meta-status'),
+        metaHypothesis: document.getElementById('meta-hypothesis-id'),
+        metaWorkflow: document.getElementById('meta-workflow-id'),
+        metaRun: document.getElementById('meta-workflow-run-id'),
+        metaUpdated: document.getElementById('meta-updated'),
+        evidenceList: document.getElementById('evidence-list'),
+        milestoneTable: document.getElementById('milestone-table'),
+        reportDownloadWrapper: document.getElementById('report-download-wrapper'),
+        reportDownload: document.getElementById('report-download'),
+      };
+
       let currentHypothesisId = null;
       const apiBase = document.body.dataset.apiBase;
       const apiKeyStorageKey = 'raven-ui-api-key';
@@ -620,10 +892,12 @@
         statusCard.apiKeyInput.value = storedKey;
       }
 
+      let finalReportLoadedFor = null;
+      let lastStatusPayload = null;
+
       const stageLabels = {
         plan_generation: 'Plan Generation',
-        data_collection: 'Data Collection',
-        analysis_planning: 'Analysis Planning',
+        data_collection: 'Data Generation',
         hybrid_analysis: 'Hybrid Analysis',
         detailed_analysis: 'Detailed Analysis',
         report_generation: 'Report Generation',
@@ -634,7 +908,6 @@
       const baseStageOrder = [
         'plan_generation',
         'data_collection',
-        'analysis_planning',
         'hybrid_analysis',
         'detailed_analysis',
         'report_generation',
@@ -643,6 +916,8 @@
 
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
+        finalReportLoadedFor = null;
+        lastStatusPayload = null;
         statusCard.pill.textContent = 'Submitting…';
         statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
         statusCard.stopButton.disabled = true;
@@ -710,6 +985,8 @@
           updateSummary(data);
           if (!isWorkflowTerminal(data)) {
             setTimeout(pollStatus, 2500);
+          } else {
+            await ensureFinalReport(data);
           }
         } catch (error) {
           console.error(error);
@@ -721,7 +998,9 @@
       }
 
       function updateSummary(data) {
+        lastStatusPayload = data;
         statusCard.summary.textContent = JSON.stringify(data, null, 2);
+        renderDashboard(data);
         const stageState = buildStageState(data);
         renderProgress(stageState);
         const waiting = stageState.some((stage) => stage.name === 'human_review' && stage.status === 'waiting_review');
@@ -833,6 +1112,179 @@
         statusCard.progressPanel.classList.remove('hidden');
       }
 
+        function renderDashboard(data) {
+          const validation = data?.validation;
+          const hasValidation = Boolean(validation);
+          if (dashboard.container) {
+            dashboard.container.classList.toggle('hidden', !hasValidation);
+          }
+          if (!hasValidation || !validation) {
+            return;
+          }
+
+          if (dashboard.metricScore) {
+            dashboard.metricScore.textContent = formatPercent(validation.score);
+          }
+          if (dashboard.metricConfidence) {
+            dashboard.metricConfidence.textContent = formatPercent(validation.confidence);
+          }
+          if (dashboard.metricConclusion) {
+            dashboard.metricConclusion.textContent = validation.conclusion ?? 'Pending validation';
+          }
+          if (dashboard.metricStage) {
+            dashboard.metricStage.textContent = formatStageName(validation.current_stage);
+          }
+          const workflowStatus = data.workflow_status ?? data.status ?? 'pending';
+          if (dashboard.metricWorkflowStatus) {
+            dashboard.metricWorkflowStatus.textContent = formatStageName(workflowStatus);
+          }
+          if (dashboard.metaStatus) {
+            dashboard.metaStatus.textContent = formatStageName(data.status ?? workflowStatus ?? 'pending');
+          }
+          if (dashboard.metaHypothesis) {
+            dashboard.metaHypothesis.textContent = data.hypothesis_id ?? '—';
+          }
+          if (dashboard.metaWorkflow) {
+            dashboard.metaWorkflow.textContent = data.workflow_id ?? '—';
+          }
+          if (dashboard.metaRun) {
+            dashboard.metaRun.textContent = data.workflow_run_id ?? '—';
+          }
+          if (dashboard.metaUpdated) {
+            dashboard.metaUpdated.textContent = new Date().toLocaleString();
+          }
+
+          renderMilestones(validation.milestones ?? []);
+          renderEvidence(validation.evidence ?? []);
+          setupReportLink(validation.evidence ?? []);
+        }
+
+        function renderMilestones(milestones) {
+          if (!dashboard.milestoneTable) return;
+          const container = dashboard.milestoneTable;
+          container.textContent = '';
+          if (!Array.isArray(milestones) || milestones.length === 0) {
+            container.classList.add('empty-state');
+            container.textContent = 'No milestones yet.';
+            return;
+          }
+          container.classList.remove('empty-state');
+          milestones.forEach((milestone) => {
+            const item = document.createElement('div');
+            item.className = 'timeline-item';
+            item.dataset.status = String(milestone.status || 'pending').toLowerCase();
+
+            const title = document.createElement('div');
+            title.className = 'timeline-title';
+            title.textContent = stageLabels[milestone.name] ?? formatStageName(milestone.name);
+            item.appendChild(title);
+
+            const badge = document.createElement('span');
+            badge.className = 'tag';
+            badge.textContent = formatStageName(milestone.status);
+            item.appendChild(badge);
+
+            if (milestone.detail) {
+              const detail = document.createElement('div');
+              detail.className = 'timeline-detail';
+              detail.textContent = milestone.detail;
+              item.appendChild(detail);
+            }
+
+            container.appendChild(item);
+          });
+        }
+
+        function renderEvidence(evidence) {
+          if (!dashboard.evidenceList) return;
+          const container = dashboard.evidenceList;
+          container.textContent = '';
+          if (!Array.isArray(evidence) || evidence.length === 0) {
+            container.classList.add('empty-state');
+            container.textContent = 'No evidence captured yet.';
+            return;
+          }
+          container.classList.remove('empty-state');
+          evidence.forEach((item) => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'evidence-item';
+
+            const type = document.createElement('div');
+            type.className = 'evidence-type';
+            type.textContent = formatStageName(item.type);
+            wrapper.appendChild(type);
+
+            if (item.uri) {
+              const uri = document.createElement('div');
+              uri.className = 'evidence-uri';
+              uri.textContent = item.uri;
+              wrapper.appendChild(uri);
+
+              const actions = document.createElement('div');
+              actions.className = 'evidence-actions';
+              const anchor = document.createElement('a');
+              anchor.className = 'pill';
+              anchor.textContent = 'Open';
+              anchor.href = item.uri;
+              anchor.target = '_blank';
+              anchor.rel = 'noopener';
+              actions.appendChild(anchor);
+              wrapper.appendChild(actions);
+            }
+
+            container.appendChild(wrapper);
+          });
+        }
+
+        function setupReportLink(evidence) {
+          if (!dashboard.reportDownloadWrapper || !dashboard.reportDownload) return;
+          const reportRef = Array.isArray(evidence)
+            ? evidence.find((entry) => String(entry.type).toLowerCase() === 'report_document')
+            : null;
+          if (reportRef && reportRef.uri) {
+            dashboard.reportDownloadWrapper.classList.remove('hidden');
+            dashboard.reportDownload.href = reportRef.uri;
+            dashboard.reportDownload.download = '';
+          } else {
+            dashboard.reportDownloadWrapper.classList.add('hidden');
+            dashboard.reportDownload.removeAttribute('href');
+            dashboard.reportDownload.removeAttribute('download');
+          }
+        }
+
+        async function ensureFinalReport(latestData) {
+          if (!currentHypothesisId) return;
+          if (finalReportLoadedFor === currentHypothesisId) return;
+          try {
+            const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/report`, {
+              headers: buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? ''),
+            });
+            if (!response.ok) return;
+            const summary = await response.json();
+            finalReportLoadedFor = currentHypothesisId;
+            const merged = { ...latestData, validation: summary };
+            updateSummary(merged);
+          } catch (error) {
+            console.error('Failed to load final report', error);
+          }
+        }
+
+        function formatPercent(value) {
+          if (typeof value !== 'number' || Number.isNaN(value)) return '—';
+          const clamped = Math.max(0, Math.min(1, value));
+          return `${(Math.round(clamped * 1000) / 10).toFixed(1)}%`;
+        }
+
+        function formatStageName(value) {
+          if (value === undefined || value === null) return '—';
+          return String(value)
+            .replace(/[_-]+/g, ' ')
+            .split(' ')
+            .filter(Boolean)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
+        }
+
       function isWorkflowComplete(data) {
         const milestones = data.validation?.milestones ?? [];
         const delivery = milestones.find((milestone) => milestone.name === 'delivery');
@@ -852,6 +1304,7 @@
 
       statusCard.resumeButton.addEventListener('click', async () => {
         if (!currentHypothesisId) return;
+        finalReportLoadedFor = null;
         statusCard.pill.textContent = 'Submitting decision…';
         statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
         try {
@@ -866,6 +1319,9 @@
           }
           const data = await response.json();
           updateSummary(data);
+          if (isWorkflowTerminal(data)) {
+            await ensureFinalReport(data);
+          }
           statusCard.pill.textContent = 'Review completed';
           statusCard.pill.style.background = 'rgba(34, 197, 94, 0.15)';
         } catch (error) {
@@ -879,6 +1335,7 @@
 
       statusCard.stopButton.addEventListener('click', async () => {
         if (!currentHypothesisId) return;
+        finalReportLoadedFor = null;
         statusCard.stopButton.disabled = true;
         statusCard.pill.textContent = 'Stopping…';
         statusCard.pill.style.background = 'rgba(248, 113, 113, 0.18)';
@@ -893,6 +1350,9 @@
           }
           const data = await response.json();
           updateSummary(data);
+          if (isWorkflowTerminal(data)) {
+            await ensureFinalReport(data);
+          }
           statusCard.pill.textContent = 'Cancelled';
           statusCard.pill.style.background = 'rgba(248, 113, 113, 0.18)';
         } catch (error) {

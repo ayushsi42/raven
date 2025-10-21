@@ -11,11 +11,10 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from hypothesis_agent.api.router import api_router
 from hypothesis_agent.api.ui import ui_router
 from hypothesis_agent.config import AppSettings, get_settings
-from hypothesis_agent.db.migrations import upgrade_database
-from hypothesis_agent.db.session import Database
+from hypothesis_agent.db.firebase import FirebaseHandle, initialize_firebase
 from hypothesis_agent.logging import configure_logging
 from hypothesis_agent.metrics import record_request_metrics
-from hypothesis_agent.repositories.hypothesis_repository import SqlAlchemyHypothesisRepository
+from hypothesis_agent.repositories.hypothesis_repository import FirestoreHypothesisRepository
 from hypothesis_agent.services.hypothesis_service import HypothesisService
 from hypothesis_agent.telemetry import RequestContextMiddleware
 from hypothesis_agent.workflows.hypothesis_workflow import HypothesisWorkflowClient
@@ -37,14 +36,14 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     app_settings = settings or get_settings()
     configure_logging(app_settings.log_level)
 
-    database = Database.from_settings(app_settings)
+    firebase_handle: FirebaseHandle = initialize_firebase(app_settings)
     workflow_client = HypothesisWorkflowClient(
         namespace=app_settings.temporal_namespace,
         task_queue=app_settings.temporal_task_queue,
         workflow=app_settings.temporal_workflow,
         address=app_settings.temporal_address,
     )
-    repository = SqlAlchemyHypothesisRepository(database.session_factory)
+    repository = FirestoreHypothesisRepository(firebase_handle.client, firebase_handle.collection)
     hypothesis_service = HypothesisService(
         repository=repository,
         workflow_client=workflow_client,
@@ -53,16 +52,15 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.settings = app_settings
-        app.state.database = database
+        app.state.firebase = firebase_handle
         app.state.workflow_client = workflow_client
         app.state.hypothesis_repository = repository
         app.state.hypothesis_service = hypothesis_service
-        await upgrade_database(app_settings.database_url)
         try:
             yield
         finally:
             await workflow_client.close()
-            await database.dispose()
+            await firebase_handle.dispose()
 
     application = FastAPI(
         title="RAVEN Hypothesis Validation API",
@@ -80,7 +78,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     # Expose core components immediately for compatibility with existing tests and tooling.
     application.state.settings = app_settings
-    application.state.database = database
+    application.state.firebase = firebase_handle
     application.state.workflow_client = workflow_client
     application.state.hypothesis_repository = repository
     application.state.hypothesis_service = hypothesis_service

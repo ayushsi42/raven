@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import io
 import json
-import textwrap
-from dataclasses import asdict, dataclass, field, is_dataclass
+import math
+import re
+import statistics
+import traceback
+from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import dataclass, field
 from pathlib import Path
-from statistics import mean, pstdev
-from typing import Any, Dict, List, Optional, Protocol, cast
+from typing import Any, Dict, List, Optional, Protocol, Sequence, cast
 
 import matplotlib.pyplot as plt
 from composio import Composio
@@ -16,9 +19,6 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
 
 from hypothesis_agent.config import AppSettings, get_settings
-from hypothesis_agent.connectors.news import NewsClient
-from hypothesis_agent.connectors.sec import SecFilingsClient
-from hypothesis_agent.connectors.yahoo import YahooFinanceClient
 from hypothesis_agent.llm import BaseLLM, LLMError, OpenAILLM
 from hypothesis_agent.models.hypothesis import (
     EvidenceReference,
@@ -27,10 +27,46 @@ from hypothesis_agent.models.hypothesis import (
     ValidationSummary,
     WorkflowMilestone,
 )
+from hypothesis_agent.orchestration.tool_catalog import ToolDefinition, load_tool_catalog
 from hypothesis_agent.storage.artifact_store import ArtifactStore
 
-
 StageContext = Dict[str, Any]
+
+
+RESULT_PREFIX = "RESULT::"
+MAX_REPL_ATTEMPTS = 10
+STDOUT_CHARACTER_LIMIT = 1600
+SAFE_BUILTINS = {
+    "abs": abs,
+    "min": min,
+    "max": max,
+    "sum": sum,
+    "len": len,
+    "range": range,
+    "enumerate": enumerate,
+    "zip": zip,
+    "map": map,
+    "filter": filter,
+    "sorted": sorted,
+    "print": print,
+    "list": list,
+    "dict": dict,
+    "set": set,
+    "tuple": tuple,
+    "float": float,
+    "int": int,
+    "str": str,
+    "bool": bool,
+    "any": any,
+    "all": all,
+    "round": round,
+    "open": open,
+    "Exception": Exception,
+    "ValueError": ValueError,
+    "TypeError": TypeError,
+    "KeyError": KeyError,
+    "RuntimeError": RuntimeError,
+}
 
 
 @dataclass(slots=True)
@@ -43,33 +79,33 @@ class StageExecutionResult:
     summary: Optional[ValidationSummary] = None
 
 
-def _clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
-    return max(minimum, min(maximum, value))
-
-
 class ToolHandle(Protocol):
     """Protocol describing the interface for a Composio-like tool."""
 
-    def invoke(self, payload: Dict[str, Any]) -> Any:
+    def invoke(self, payload: Dict[str, Any]) -> Any:  # pragma: no cover - interface
         ...
 
 
 class ToolSet(Protocol):
     """Protocol describing a minimal tool registry."""
 
-    def get_tool(self, name: str) -> ToolHandle:
+    def get_tool(self, name: str) -> ToolHandle:  # pragma: no cover - interface
         ...
 
 
 class _ComposioTool:
     """Execute a specific Composio tool slug."""
 
-    def __init__(self, *, client: Any, slug: str) -> None:
+    def __init__(self, *, client: Any, slug: str, user_id: str | None) -> None:
         self._client = client
         self._slug = slug
+        self._user_id = user_id
 
     def invoke(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        response = self._client.tools.execute(slug=self._slug, arguments=payload)
+        kwargs: Dict[str, Any] = {"slug": self._slug, "arguments": payload}
+        if self._user_id:
+            kwargs["user_id"] = self._user_id
+        response = self._client.tools.execute(**kwargs)
         if not response.get("successful", False):
             error = response.get("error") or "unknown error"
             raise RuntimeError(f"Composio tool '{self._slug}' execution failed: {error}")
@@ -79,8 +115,9 @@ class _ComposioTool:
 class _LazyComposioToolSet:
     """Lazily instantiate the Composio client when tools are requested."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, user_id: str | None) -> None:
         self._client: Any = None
+        self._user_id = user_id
 
     def _ensure_client(self) -> Any:
         if self._client is None:
@@ -89,13 +126,13 @@ class _LazyComposioToolSet:
             except Exception as exc:
                 if isinstance(exc, ApiKeyNotProvidedError):
                     raise RuntimeError(
-                        "Composio API key must be provided via COMPOSIO_API_KEY to run the delivery stage."
+                        "Composio API key must be provided via COMPOSIO_API_KEY to run the pipeline."
                     ) from exc
                 raise
         return self._client
 
     def get_tool(self, name: str) -> ToolHandle:
-        return _ComposioTool(client=self._ensure_client(), slug=name)
+        return _ComposioTool(client=self._ensure_client(), slug=name, user_id=self._user_id)
 
 
 class LangGraphValidationOrchestrator:
@@ -106,11 +143,9 @@ class LangGraphValidationOrchestrator:
         *,
         settings: AppSettings | None = None,
         llm: BaseLLM | None = None,
-    yahoo_client: YahooFinanceClient | None = None,
-    sec_client: SecFilingsClient | None = None,
-    news_client: NewsClient | None = None,
         artifact_store: ArtifactStore | None = None,
         toolset: ToolSet | None = None,
+        tool_catalog: Dict[str, ToolDefinition] | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         if llm is not None:
@@ -119,13 +154,10 @@ class LangGraphValidationOrchestrator:
             if not self.settings.openai_api_key:
                 raise LLMError("OpenAI API key must be configured for validation pipeline")
             self.llm = OpenAILLM(api_key=self.settings.openai_api_key, model=self.settings.openai_model)
-        self.yahoo = yahoo_client or YahooFinanceClient()
-        self.sec = sec_client
-        if not self.settings.alpha_vantage_api_key:
-            raise RuntimeError("Alpha Vantage API key must be configured for news collection")
-        self.news = news_client or NewsClient(api_key=self.settings.alpha_vantage_api_key)
         self.artifact_store = artifact_store or ArtifactStore.from_path(self.settings.artifact_store_path)
-        self.toolset = toolset or _LazyComposioToolSet()
+        self.tool_catalog = tool_catalog or load_tool_catalog()
+        composio_user_id = self.settings.composio_user_id or None
+        self.toolset = toolset or _LazyComposioToolSet(user_id=composio_user_id)
 
     # ------------------------------------------------------------------
     # Public API
@@ -137,8 +169,6 @@ class LangGraphValidationOrchestrator:
             return self._run_plan_generation(request, context)
         if stage == "data_collection":
             return self._run_data_collection(request, context)
-        if stage == "analysis_planning":
-            return self._run_analysis_planning(request, context)
         if stage == "hybrid_analysis":
             return self._run_hybrid_analysis(request, context)
         if stage == "detailed_analysis":
@@ -153,127 +183,120 @@ class LangGraphValidationOrchestrator:
     # Stage implementations
     # ------------------------------------------------------------------
     def _run_plan_generation(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        plan_steps = self.llm.generate_data_plan(request)
-        if not plan_steps:
-            raise RuntimeError("LLM failed to generate data collection plan")
-        context["plan"] = {"steps": plan_steps}
-        context.setdefault("insights", []).append("Generated LLM-backed data acquisition plan.")
+        workflow_id = self._ensure_workflow_id(context)
+        plan = self._build_validation_plan(request)
+        plan_path = self.artifact_store.write_json(workflow_id, "validation_plan", plan).resolve().as_uri()
+        context["plan"] = plan
+        context.setdefault("insights", []).append(
+            f"Planning stage selected {len(plan['data_fetch_tools'])} data tools and {len(plan['analysis_plan'])} analysis steps."
+        )
+        metadata = context.setdefault("metadata", {})
+        metadata.setdefault("plan", {})["artifact"] = plan_path
         milestone = WorkflowMilestone(
             name="plan_generation",
             status=MilestoneStatus.COMPLETED,
-            detail="Validation plan drafted via OpenAI planner.",
+            detail=self._format_plan_detail(plan),
         )
-        return StageExecutionResult(context=context, milestone=milestone)
-
-    def _run_data_collection(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        metadata = context.setdefault("metadata", {})
-        workflow_id = metadata.get("workflow_id")
-        if not workflow_id:
-            raise RuntimeError("Workflow metadata must include a workflow_id before data collection.")
-        if not request.entities:
-            raise RuntimeError("At least one entity ticker is required for data collection.")
-
-        primary_ticker = request.entities[0]
-        market_info = self._collect_market_data(request, workflow_id, primary_ticker)
-        filings_info = None
-        if self.sec is not None:
-            try:
-                filings_info = self._collect_filings_data(workflow_id, primary_ticker)
-            except Exception as exc:
-                context.setdefault("insights", []).append(f"SEC fetch skipped: {exc}")
-                filings_info = None
-        news_info = self._collect_news_data(workflow_id, request.entities)
-
-        data_sources: Dict[str, Any] = {"market": market_info, "news": news_info}
-        if filings_info is not None:
-            data_sources["filings"] = filings_info
-
-        context["data_sources"] = data_sources
-        insights = context.setdefault("insights", [])
-        if filings_info is not None:
-            insights.append("Fetched live market, SEC, and news datasets.")
-        else:
-            insights.append("Fetched live market and news datasets.")
-
-        evidence = [EvidenceReference(type="market_data", uri=market_info["path"])]
-        if filings_info is not None:
-            evidence.append(EvidenceReference(type="sec_filings", uri=filings_info["path"]))
-        evidence.append(EvidenceReference(type="news_sentiment", uri=news_info["path"]))
+        evidence = [EvidenceReference(type="validation_plan", uri=plan_path)]
         for ref in evidence:
             self._record_evidence(context, ref)
+        return StageExecutionResult(context=context, milestone=milestone, evidence=evidence)
 
+    def _run_data_collection(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
+        workflow_id = self._ensure_workflow_id(context)
+        plan = context.get("plan")
+        if not plan or not isinstance(plan, dict):
+            raise RuntimeError("Validation plan missing from context; run plan_generation first.")
+        tools = plan.get("data_fetch_tools") or []
+        if not tools:
+            raise RuntimeError("Validation plan did not produce any data fetch tools.")
+
+        executed: List[Dict[str, Any]] = []
+        evidence: List[EvidenceReference] = []
+        for index, tool in enumerate(tools, start=1):
+            slug = tool.get("slug")
+            arguments = cast(Dict[str, Any], tool.get("arguments", {}))
+            if not slug:
+                raise RuntimeError("Plan tool definition missing slug")
+            handle = self.toolset.get_tool(slug)
+            response = handle.invoke(arguments)
+            payload = {
+                "slug": slug,
+                "arguments": arguments,
+                "response": response,
+                "description": tool.get("description"),
+            }
+            artifact_name = f"data_{index:02d}_{slug.lower()}"
+            path = self.artifact_store.write_json(workflow_id, artifact_name, payload)
+            executed.append(
+                {
+                    "slug": slug,
+                    "arguments": arguments,
+                    "artifact": str(path),
+                    "uri": path.resolve().as_uri(),
+                    "description": tool.get("description"),
+                }
+            )
+            evidence_ref = EvidenceReference(type="data_fetch", uri=path.resolve().as_uri())
+            evidence.append(evidence_ref)
+            self._record_evidence(context, evidence_ref)
+
+        context["data_sources"] = {
+            item["slug"]: {
+                "artifact_path": item["uri"],
+                "arguments": item["arguments"],
+                "description": item.get("description"),
+            }
+            for item in executed
+        }
+        context.setdefault("insights", []).append(
+            f"Executed {len(executed)} Composio tools for data collection."
+        )
         milestone = WorkflowMilestone(
             name="data_collection",
             status=MilestoneStatus.COMPLETED,
-            detail="Raw datasets collected from external connectors.",
+            detail=self._format_data_collection_detail(executed),
         )
         return StageExecutionResult(context=context, milestone=milestone, evidence=evidence)
 
-    def _run_analysis_planning(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        data_sources = context.get("data_sources") or {}
-        if not data_sources:
-            raise RuntimeError("Data sources missing; run data_collection stage first.")
-
-        data_overview = {
-            name: payload.get("summary")
-            for name, payload in data_sources.items()
-        }
-        analysis_plan = self.llm.generate_analysis_plan(request, data_overview)
-        if not analysis_plan:
-            raise RuntimeError("LLM failed to generate analysis plan")
-
-        context["analysis_plan"] = analysis_plan
-        context.setdefault("insights", []).append("LLM produced the quantitative analysis blueprint.")
-        milestone = WorkflowMilestone(
-            name="analysis_planning",
-            status=MilestoneStatus.COMPLETED,
-            detail="Analysis plan constructed from collected dataset summaries.",
-        )
-        return StageExecutionResult(context=context, milestone=milestone)
-
     def _run_hybrid_analysis(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        data_sources = context.get("data_sources") or {}
-        if not data_sources:
+        workflow_id = self._ensure_workflow_id(context)
+        plan = context.get("plan")
+        data_sources = context.get("data_sources")
+        if not plan or not isinstance(plan, dict):
+            raise RuntimeError("Validation plan missing from context; run plan_generation first.")
+        if not data_sources or not isinstance(data_sources, dict):
             raise RuntimeError("Data sources missing; run data_collection stage first.")
-        metadata = context.get("metadata") or {}
-        workflow_id = metadata.get("workflow_id")
-        if not workflow_id:
-            raise RuntimeError("Workflow ID missing from context metadata.")
 
-        market_analysis, chart_path = self._compute_market_metrics(workflow_id, data_sources["market"])
-        filings_analysis: Dict[str, Any] | None = None
-        if "filings" in data_sources:
-            filings_analysis = self._compute_filings_metrics(data_sources["filings"])
-        news_analysis = self._compute_news_metrics(data_sources["news"])
+        analysis_plan = cast(List[Dict[str, Any]], plan.get("analysis_plan", []))
+        if not analysis_plan:
+            raise RuntimeError("Analysis plan missing from validation plan output.")
 
-        analysis_results = {
-            "market": market_analysis,
-            "news": news_analysis,
-            "charts": [chart_path],
+        analysis_result, attempt_history = self._execute_llm_analysis(
+            workflow_id=workflow_id,
+            request=request,
+            analysis_plan=analysis_plan,
+            data_sources=data_sources,
+        )
+
+        charts = analysis_result.get("artifacts") or analysis_result.get("charts") or []
+        analysis_payload = {
+            "steps": analysis_result.get("steps", []),
+            "aggregated": analysis_result.get("aggregated", {}),
+            "insights": analysis_result.get("insights", []),
+            "charts": charts,
+            "history": attempt_history,
         }
-        if filings_analysis is not None:
-            analysis_results["filings"] = filings_analysis
-        aggregated_insights = []
-        aggregated_insights.extend(market_analysis.get("insights", []))
-        aggregated_insights.extend(news_analysis.get("insights", []))
-        if filings_analysis is not None:
-            aggregated_insights.extend(filings_analysis.get("insights", []))
-        analysis_results["insights"] = aggregated_insights
-        metrics_path = self.artifact_store.write_json(workflow_id, "analysis_metrics", analysis_results).resolve().as_uri()
-        analysis_results["metrics_path"] = metrics_path
-        context["analysis_results"] = analysis_results
-        insights_bucket = context.setdefault("insights", [])
-        insights_bucket.append("Hybrid quantitative and qualitative analytics computed.")
-        insights_bucket.extend(insight for insight in aggregated_insights[:3])
-
-        evidence = [EvidenceReference(type="analysis_metrics", uri=metrics_path), EvidenceReference(type="chart", uri=chart_path)]
+        metrics_path = self.artifact_store.write_json(workflow_id, "analysis_metrics", analysis_payload).resolve().as_uri()
+        evidence = [EvidenceReference(type="analysis_metrics", uri=metrics_path)]
         for ref in evidence:
             self._record_evidence(context, ref)
-
+        context["analysis_results"] = analysis_payload
+        context.setdefault("insights", []).extend(analysis_payload.get("insights", [])[:3])
         milestone = WorkflowMilestone(
             name="hybrid_analysis",
             status=MilestoneStatus.COMPLETED,
-            detail="Quantitative diagnostics executed with chart artifacts persisted.",
+            detail=self._format_analysis_detail(analysis_payload.get("steps", [])),
         )
         return StageExecutionResult(context=context, milestone=milestone, evidence=evidence)
 
@@ -292,7 +315,6 @@ class LangGraphValidationOrchestrator:
         }
         context["detailed_analysis"] = detailed_analysis
         context.setdefault("insights", []).append("LLM synthesized detailed narrative from computed metrics.")
-
         milestone = WorkflowMilestone(
             name="detailed_analysis",
             status=MilestoneStatus.COMPLETED,
@@ -301,42 +323,30 @@ class LangGraphValidationOrchestrator:
         return StageExecutionResult(context=context, milestone=milestone)
 
     def _run_report_generation(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
-        metadata = context.get("metadata") or {}
-        workflow_id = metadata.get("workflow_id")
-        if not workflow_id:
-            raise RuntimeError("Workflow ID missing from context metadata.")
-        detailed = context.get("detailed_analysis")
-        if not detailed:
-            raise RuntimeError("Detailed analysis missing; run detailed_analysis stage first.")
-        analysis_results = detailed.get("metrics")
-        if not analysis_results:
-            raise RuntimeError("Detailed analysis metrics missing; run detailed_analysis stage first.")
-        if not isinstance(analysis_results, dict):
-            raise RuntimeError("Detailed analysis metrics payload malformed; expected mapping")
+        workflow_id = self._ensure_workflow_id(context)
         plan = context.get("plan")
-        if not plan or not plan.get("steps"):
-            raise RuntimeError("Validation plan missing; run plan_generation stage first.")
-        plan_steps = plan["steps"]
-        if not isinstance(plan_steps, list) or not plan_steps:
-            raise RuntimeError("Plan steps payload malformed; expected non-empty list of strings.")
-        if not all(isinstance(step, str) and step.strip() for step in plan_steps):
-            raise RuntimeError("Plan steps must be non-empty strings")
-        chart_artifacts = analysis_results.get("charts")
-        if not chart_artifacts or not isinstance(chart_artifacts, list):
-            raise RuntimeError("Analysis results missing chart artifacts for report generation")
-        if not all(isinstance(item, str) for item in chart_artifacts):
-            raise RuntimeError("Chart artifact paths must be strings")
+        detailed = context.get("detailed_analysis")
+        analysis_results = context.get("analysis_results")
+        if not plan:
+            raise RuntimeError("Validation plan missing; run plan_generation stage first")
+        if not detailed:
+            raise RuntimeError("Detailed analysis missing; run detailed_analysis stage first")
+        if not analysis_results:
+            raise RuntimeError("Analysis results missing; run hybrid_analysis stage first")
 
+        plan_steps = self._plan_overview_lines(plan)
+        charts = analysis_results.get("charts") or []
+        if not charts:
+            charts = [self._generate_fallback_chart(workflow_id, analysis_results)]
         report_payload = self.llm.generate_report(
             request=request,
             metrics_overview=analysis_results,
             analysis_summary=detailed["narrative"],
-            artifact_paths=chart_artifacts,
+            artifact_paths=charts,
         )
         if not isinstance(report_payload, dict):
             raise RuntimeError("LLM report payload must be a dictionary")
-
-        report_pdf = self._render_report_pdf(
+        pdf_path = self._render_report_pdf(
             workflow_id=workflow_id,
             request=request,
             plan_steps=plan_steps,
@@ -344,14 +354,9 @@ class LangGraphValidationOrchestrator:
             detailed_analysis=detailed,
             report_payload=report_payload,
         )
-
-        context["report"] = {
-            "payload": report_payload,
-            "pdf_path": report_pdf,
-        }
-        pdf_evidence = EvidenceReference(type="report_document", uri=report_pdf)
+        context["report"] = {"payload": report_payload, "pdf_path": pdf_path}
+        pdf_evidence = EvidenceReference(type="report_document", uri=pdf_path)
         self._record_evidence(context, pdf_evidence)
-
         score, confidence = self._score_validation(analysis_results)
         summary = ValidationSummary(
             score=score,
@@ -361,7 +366,6 @@ class LangGraphValidationOrchestrator:
             current_stage="report_generation",
             milestones=[],
         )
-
         milestone = WorkflowMilestone(
             name="report_generation",
             status=MilestoneStatus.COMPLETED,
@@ -387,7 +391,6 @@ class LangGraphValidationOrchestrator:
             report_payload=payload,
         )
         context.setdefault("insights", []).append(f"Report delivered to {recipient} via Composio tool router.")
-
         milestone = WorkflowMilestone(
             name="delivery",
             status=MilestoneStatus.COMPLETED,
@@ -396,155 +399,399 @@ class LangGraphValidationOrchestrator:
         return StageExecutionResult(context=context, milestone=milestone)
 
     # ------------------------------------------------------------------
-    # Data collection helpers
+    # Planning helpers
     # ------------------------------------------------------------------
-    def _collect_market_data(self, request: HypothesisRequest, workflow_id: str, ticker: str) -> Dict[str, Any]:
-        series = self.yahoo.fetch_daily_prices(ticker, request.time_horizon.start, request.time_horizon.end).prices
-        payload = {"ticker": ticker, "series": series}
-        path = self.artifact_store.write_json(workflow_id, "market_data", payload).resolve().as_uri()
-        summary = {
-            "ticker": ticker,
-            "observations": len(series),
-            "start": series[0]["date"] if series else None,
-            "end": series[-1]["date"] if series else None,
+    def _ensure_workflow_id(self, context: StageContext) -> str:
+        metadata = context.get("metadata") or {}
+        workflow_id = metadata.get("workflow_id")
+        if not workflow_id:
+            raise RuntimeError("Workflow metadata must include a workflow_id")
+        return str(workflow_id)
+
+    def _build_validation_plan(self, request: HypothesisRequest) -> Dict[str, Any]:
+        symbol = self._canonical_symbol(request.entities)
+        selected_tools = self._select_data_fetch_tools(request, symbol)
+        analysis_plan = self._build_analysis_plan(request, symbol, selected_tools)
+        return {
+            "hypothesis": request.hypothesis_text,
+            "target_symbol": symbol,
+            "data_fetch_tools": selected_tools,
+            "analysis_plan": analysis_plan,
         }
-        return {"path": path, "summary": summary}
 
-    def _collect_filings_data(self, workflow_id: str, ticker: str) -> Dict[str, Any]:
-        records = [self._serialize_record(record) for record in self.sec.fetch_recent_filings(ticker)]
-        payload = {"ticker": ticker, "records": records}
-        path = self.artifact_store.write_json(workflow_id, "sec_filings", payload).resolve().as_uri()
-        summary = {
-            "ticker": ticker,
-            "count": len(records),
-            "forms": sorted({record.get("filing_type") for record in records if record.get("filing_type")}),
-        }
-        return {"path": path, "summary": summary}
+    def _canonical_symbol(self, entities: Sequence[str]) -> str:
+        if not entities:
+            return "SPY"
+        return entities[0].strip().upper() or "SPY"
 
-    def _collect_news_data(self, workflow_id: str, tickers: List[str]) -> Dict[str, Any]:
-        articles = [self._serialize_record(article) for article in self.news.fetch_sentiment(tickers)]
-        payload = {"tickers": tickers, "articles": articles}
-        path = self.artifact_store.write_json(workflow_id, "news_sentiment", payload).resolve().as_uri()
-        summary = {
-            "tickers": tickers,
-            "article_count": len(articles),
-            "avg_sentiment": round(mean([article.get("sentiment", 0.0) for article in articles]), 4) if articles else 0.0,
-        }
-        return {"path": path, "summary": summary}
+    def _select_data_fetch_tools(self, request: HypothesisRequest, symbol: str) -> List[Dict[str, Any]]:
+        text = request.hypothesis_text.lower()
+        catalogue = self.tool_catalog
+        tools: List[Dict[str, Any]] = []
 
-    # ------------------------------------------------------------------
-    # Analysis helpers
-    # ------------------------------------------------------------------
-    def _compute_market_metrics(self, workflow_id: str, market_info: Dict[str, Any]) -> tuple[Dict[str, Any], str]:
-        payload = self._load_json(market_info["path"])
-        series = payload.get("series", [])
-
-        ticker = payload.get("ticker")
-        if not ticker:
-            raise RuntimeError("Market data payload missing ticker symbol")
-
-        metrics_code = textwrap.dedent(
-            """
-            import json
-            from statistics import mean, pstdev
-
-            label = ticker or "Asset"
-            closes = [float(item["close"]) for item in series if item.get("close") is not None]
-            if len(closes) < 2:
-                raise ValueError("Insufficient market data for hybrid analysis.")
-
-            returns = [(closes[idx] / closes[idx - 1]) - 1 for idx in range(1, len(closes))]
-            volatility = pstdev(returns) if len(returns) > 1 else 0.0
-            avg_return = mean(returns)
-            trading_days = len(closes)
-            years = trading_days / 252 if trading_days else 1.0
-            cagr = (closes[-1] / closes[0]) ** (1 / years) - 1 if years > 0 else 0.0
-
-            insights = [
-                f"{label}: CAGR {cagr:.2%} with volatility {volatility:.2%}.",
-                f"{label}: Average session return {avg_return:.2%} across {trading_days} trading days.",
-            ]
-
-            json.dumps(
+        def add_tool(slug: str, arguments: Dict[str, Any]) -> None:
+            if slug not in catalogue:
+                return
+            if any(item.get("slug") == slug for item in tools):
+                return
+            definition = catalogue[slug]
+            tools.append(
                 {
-                    "metrics": {
-                        "start_price": round(closes[0], 4),
-                        "end_price": round(closes[-1], 4),
-                        "cagr": round(cagr, 4),
-                        "volatility": round(volatility, 4),
-                        "avg_return": round(avg_return, 4),
-                    },
-                    "insights": insights,
+                    "slug": slug,
+                    "description": definition.description,
+                    "arguments": arguments,
+                    "inputs": definition.inputs,
                 }
             )
-            """
-        )
 
-        metrics_raw = self._run_python_repl(metrics_code, locals={"series": series, "ticker": ticker})
-        chart_path = self._generate_price_chart(workflow_id, ticker, series)
-        return self._parse_analysis_json(metrics_raw), chart_path
+        add_tool("ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED", {"symbol": symbol})
+        add_tool("ALPHA_VANTAGE_COMPANY_OVERVIEW", {"symbol": symbol})
+        add_tool("ALPHA_VANTAGE_NEWS_SENTIMENT", {"tickers": symbol})
 
-    def _compute_filings_metrics(self, filings_info: Dict[str, Any]) -> Dict[str, Any]:
-        payload = self._load_json(filings_info["path"])
-        records = payload.get("records", [])
-        if not records:
-            raise RuntimeError("SEC filings dataset is empty.")
-        latest = sorted(records, key=lambda item: item.get("filed", ""), reverse=True)
-        metrics = {
-            "filing_count": len(records),
-            "recent_forms": [record.get("filing_type") for record in latest[:5]],
-            "latest_filed": latest[0].get("filed"),
-        }
-        insights = [
-            f"Filings cadence steady with {metrics['filing_count']} submissions in record set.",
-            f"Most recent filing type: {metrics['recent_forms'][0]} dated {metrics['latest_filed']}."
-            if metrics["recent_forms"] and metrics["latest_filed"]
-            else "Reviewed recent regulatory activity for cadence context.",
-        ]
-        return {"metrics": metrics, "insights": insights}
+        profitability_keywords = {"margin", "cash flow", "cashflow", "operating", "profit", "free cash"}
+        if any(keyword in text for keyword in profitability_keywords):
+            add_tool("ALPHA_VANTAGE_CASH_FLOW", {"symbol": symbol})
+            add_tool("ALPHA_VANTAGE_BALANCE_SHEET", {"symbol": symbol})
 
-    def _compute_news_metrics(self, news_info: Dict[str, Any]) -> Dict[str, Any]:
-        payload = self._load_json(news_info["path"])
-        articles = payload.get("articles", [])
-        if not articles:
-            raise RuntimeError("News sentiment dataset is empty.")
-        sentiments = [float(article.get("sentiment", 0.0)) for article in articles]
-        avg_sentiment = round(mean(sentiments), 4)
-        metrics = {
-            "article_count": len(articles),
-            "avg_sentiment": avg_sentiment,
-            "sentiment_range": [round(min(sentiments), 4), round(max(sentiments), 4)],
-        }
-        stance = "constructive" if avg_sentiment > 0 else "cautious" if avg_sentiment < 0 else "balanced"
-        insights = [
-            f"News flow {stance} with average sentiment {avg_sentiment:+.2f} across {metrics['article_count']} articles.",
-            "Sentiment dispersion captured via range for volatility context.",
-        ]
-        return {"metrics": metrics, "insights": insights}
+        if "earnings" in text or "eps" in text:
+            add_tool("ALPHA_VANTAGE_EARNINGS", {"symbol": symbol})
+
+        if "calendar" in text or "guidance" in text:
+            add_tool("ALPHA_VANTAGE_EARNINGS_CALENDAR", {"symbol": symbol})
+
+        macro_keywords = {"macro", "gdp", "economy", "recession"}
+        if any(keyword in text for keyword in macro_keywords):
+            add_tool("ALPHA_VANTAGE_REAL_GDP", {})
+            add_tool("ALPHA_VANTAGE_SECTOR", {})
+
+        if "currency" in text or "fx" in text or "/" in symbol:
+            pair = symbol
+            if "/" in pair:
+                base, quote = pair.split("/", 1)
+            elif len(pair) == 6:
+                base, quote = pair[:3], pair[3:]
+            else:
+                base, quote = "USD", "EUR"
+            add_tool("ALPHA_VANTAGE_CURRENCY_EXCHANGE_RATE", {"from_currency": base, "to_currency": quote})
+            add_tool("ALPHA_VANTAGE_FX_WEEKLY", {"from_symbol": base, "to_symbol": quote})
+
+        return tools
+
+    def _build_analysis_plan(
+        self,
+        request: HypothesisRequest,
+        symbol: str,
+        selected_tools: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        tool_slugs = {tool["slug"] for tool in selected_tools}
+        plan: List[Dict[str, Any]] = []
+
+        if "ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED" in tool_slugs:
+            plan.append(
+                {
+                    "name": "price_trend_analysis",
+                    "description": f"Evaluate trailing price momentum and volatility for {symbol} using monthly adjusted closes.",
+                    "source_tools": ["ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED"],
+                    "operations": [
+                        {
+                            "operation": "percent_change",
+                            "field": "5. adjusted close",
+                            "periods": 12,
+                            "label": "Trailing 12m adjusted close change",
+                        },
+                        {
+                            "operation": "volatility",
+                            "field": "5. adjusted close",
+                            "periods": 12,
+                            "label": "Annualized volatility (monthly)",
+                        },
+                    ],
+                }
+            )
+
+        if "ALPHA_VANTAGE_COMPANY_OVERVIEW" in tool_slugs:
+            plan.append(
+                {
+                    "name": "profitability_snapshot",
+                    "description": "Extract current profitability ratios from company overview.",
+                    "source_tools": ["ALPHA_VANTAGE_COMPANY_OVERVIEW"],
+                    "operations": [
+                        {
+                            "operation": "latest_value",
+                            "field": "OperatingMarginTTM",
+                            "label": "Operating margin (TTM)",
+                        },
+                        {
+                            "operation": "latest_value",
+                            "field": "ProfitMargin",
+                            "label": "Net profit margin",
+                        },
+                    ],
+                }
+            )
+
+        if "ALPHA_VANTAGE_CASH_FLOW" in tool_slugs:
+            plan.append(
+                {
+                    "name": "cash_flow_trend",
+                    "description": "Assess annual operating cash flow momentum.",
+                    "source_tools": ["ALPHA_VANTAGE_CASH_FLOW"],
+                    "operations": [
+                        {
+                            "operation": "yoy_change",
+                            "field": "operatingCashflow",
+                            "label": "YoY change in operating cash flow",
+                        }
+                    ],
+                }
+            )
+
+        if "ALPHA_VANTAGE_BALANCE_SHEET" in tool_slugs:
+            plan.append(
+                {
+                    "name": "balance_sheet_health",
+                    "description": "Review leverage and liquidity from latest balance sheet.",
+                    "source_tools": ["ALPHA_VANTAGE_BALANCE_SHEET"],
+                    "operations": [
+                        {
+                            "operation": "latest_value",
+                            "field": "totalAssets",
+                            "label": "Total assets (latest)",
+                        },
+                        {
+                            "operation": "latest_value",
+                            "field": "totalLiabilities",
+                            "label": "Total liabilities (latest)",
+                        },
+                    ],
+                }
+            )
+
+        if "ALPHA_VANTAGE_EARNINGS" in tool_slugs:
+            plan.append(
+                {
+                    "name": "earnings_consistency",
+                    "description": "Inspect earnings per share trend.",
+                    "source_tools": ["ALPHA_VANTAGE_EARNINGS"],
+                    "operations": [
+                        {
+                            "operation": "latest_value",
+                            "field": "reportedEPS",
+                            "label": "Most recent reported EPS",
+                        }
+                    ],
+                }
+            )
+
+        if "ALPHA_VANTAGE_NEWS_SENTIMENT" in tool_slugs:
+            plan.append(
+                {
+                    "name": "sentiment_monitor",
+                    "description": "Summarize Alpha Vantage news sentiment feed.",
+                    "source_tools": ["ALPHA_VANTAGE_NEWS_SENTIMENT"],
+                    "operations": [
+                        {
+                            "operation": "average_sentiment",
+                            "field": "overall_sentiment_score",
+                            "label": "Average sentiment",
+                        }
+                    ],
+                }
+            )
+
+        if "ALPHA_VANTAGE_CURRENCY_EXCHANGE_RATE" in tool_slugs:
+            plan.append(
+                {
+                    "name": "fx_spot_snapshot",
+                    "description": "Capture real-time FX rate for exposure analysis.",
+                    "source_tools": ["ALPHA_VANTAGE_CURRENCY_EXCHANGE_RATE"],
+                    "operations": [
+                        {
+                            "operation": "latest_rate",
+                            "field": "5. Exchange Rate",
+                            "label": "Spot exchange rate",
+                        }
+                    ],
+                }
+            )
+
+        if "ALPHA_VANTAGE_REAL_GDP" in tool_slugs:
+            plan.append(
+                {
+                    "name": "macro_context",
+                    "description": "Use real GDP series for macro backdrop.",
+                    "source_tools": ["ALPHA_VANTAGE_REAL_GDP"],
+                    "operations": [
+                        {
+                            "operation": "latest_value",
+                            "field": "value",
+                            "label": "Latest GDP reading",
+                        }
+                    ],
+                }
+            )
+
+        return plan
 
     # ------------------------------------------------------------------
-    # Rendering and delivery helpers
+    # Analysis execution helpers
     # ------------------------------------------------------------------
-    def _generate_price_chart(self, workflow_id: str, ticker: str, series: List[Dict[str, Any]]) -> str:
-        if not ticker:
-            raise RuntimeError("Market data payload missing ticker symbol for chart generation")
-        if not series:
-            raise RuntimeError("Price series is empty; cannot generate chart")
+    def _execute_llm_analysis(
+        self,
+        *,
+        workflow_id: str,
+        request: HypothesisRequest,
+        analysis_plan: List[Dict[str, Any]],
+        data_sources: Dict[str, Dict[str, Any]],
+    ) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        artifact_map: Dict[str, str] = {}
+        for slug, metadata in data_sources.items():
+            uri = metadata.get("artifact_path") or metadata.get("uri")
+            if not uri:
+                raise RuntimeError(f"Artifact path missing for tool '{slug}'")
+            path = Path(str(uri).replace("file://", "")).resolve()
+            if not path.exists():
+                raise RuntimeError(f"Artifact path for tool '{slug}' does not exist: {path}")
+            artifact_map[slug] = str(path)
 
-        dates: List[Any] = []
-        closes: List[float] = []
+        history_records: List[Dict[str, Any]] = []
+        prompt_history: List[Dict[str, str]] = []
+
+        for attempt in range(1, MAX_REPL_ATTEMPTS + 1):
+            response = self.llm.generate_analysis_code(
+                request=request,
+                analysis_plan=analysis_plan,
+                data_artifacts=artifact_map,
+                attempt=attempt,
+                history=prompt_history,
+            )
+            code = self._extract_python_code(response)
+
+            stdout_text, stderr_text, result_payload, feedback = self._run_analysis_code(
+                code=code,
+                artifact_map=artifact_map,
+                workflow_id=workflow_id,
+            )
+
+            record_status = "success" if result_payload is not None else "error"
+            record: Dict[str, Any] = {
+                "attempt": attempt,
+                "status": record_status,
+                "code": self._tail_text(code, STDOUT_CHARACTER_LIMIT),
+                "stdout": self._tail_text(stdout_text, STDOUT_CHARACTER_LIMIT),
+                "stderr": self._tail_text(stderr_text, STDOUT_CHARACTER_LIMIT),
+            }
+            if feedback:
+                record["feedback"] = self._tail_text(feedback, STDOUT_CHARACTER_LIMIT)
+            history_records.append(record)
+
+            prompt_history.append(
+                {
+                    "attempt": str(attempt),
+                    "status": record_status,
+                    "stdout": self._tail_text(stdout_text, 600),
+                    "stderr": self._tail_text(stderr_text, 600),
+                    "feedback": self._tail_text(feedback or record_status, 600),
+                }
+            )
+
+            if result_payload is not None:
+                return result_payload, history_records
+
+        raise RuntimeError("LLM analysis failed to produce a valid result after maximum retries")
+
+    def _run_analysis_code(
+        self,
+        *,
+        code: str,
+        artifact_map: Dict[str, str],
+        workflow_id: str,
+    ) -> tuple[str, str, Optional[Dict[str, Any]], Optional[str]]:
+        stdout_buffer = io.StringIO()
+        stderr_buffer = io.StringIO()
+        result_payload: Optional[Dict[str, Any]] = None
+        feedback: Optional[str] = None
+
+        environment = self._prepare_analysis_environment(workflow_id, artifact_map)
+
         try:
-            for row in series:
-                dates.append(row["date"])
-                closes.append(float(row["close"]))
-        except (KeyError, TypeError, ValueError) as exc:
-            raise RuntimeError("Price series missing required fields for chart generation") from exc
+            with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+                exec(code, environment, {})
+        except Exception:
+            feedback = traceback.format_exc()
 
+        stdout_text = stdout_buffer.getvalue()
+        stderr_text = stderr_buffer.getvalue()
+
+        result_line: Optional[str] = None
+        for line in stdout_text.splitlines():
+            if line.startswith(RESULT_PREFIX):
+                result_line = line[len(RESULT_PREFIX) :].strip()
+
+        if result_line is not None:
+            try:
+                result_payload = json.loads(result_line)
+                feedback = None
+            except json.JSONDecodeError as exc:
+                feedback = f"Failed to parse RESULT payload: {exc}"
+        elif feedback is None:
+            combined_error = stderr_text.strip()
+            feedback = combined_error or "No RESULT:: line emitted in stdout"
+
+        return stdout_text, stderr_text, result_payload, feedback
+
+    def _prepare_analysis_environment(self, workflow_id: str, artifact_map: Dict[str, str]) -> Dict[str, Any]:
+        workflow_dir = self.artifact_store.root / workflow_id.replace("/", "_")
+        workflow_dir.mkdir(parents=True, exist_ok=True)
+
+        def load_json_artifact(slug: str) -> Any:
+            if slug not in artifact_map:
+                raise KeyError(f"Unknown data artifact slug: {slug}")
+            path = Path(artifact_map[slug])
+            with path.open("r", encoding="utf-8") as handle:
+                return json.load(handle)
+
+        def write_json_artifact(name: str, payload: Dict[str, Any]) -> str:
+            target = self.artifact_store.write_json(workflow_id, name, payload)
+            return str(target.resolve())
+
+        env: Dict[str, Any] = {
+            "__builtins__": SAFE_BUILTINS,
+            "json": json,
+            "math": math,
+            "statistics": statistics,
+            "Path": Path,
+            "DATA_ARTIFACTS": artifact_map,
+            "load_json_artifact": load_json_artifact,
+            "write_json_artifact": write_json_artifact,
+            "ARTIFACT_OUTPUT_DIR": str(workflow_dir),
+        }
+        return env
+
+    @staticmethod
+    def _extract_python_code(response: str) -> str:
+        match = re.search(r"```(?:python)?\s*(.*?)```", response, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        return response.strip()
+
+    @staticmethod
+    def _tail_text(text: str, limit: int) -> str:
+        snippet = text.strip()
+        if len(snippet) <= limit:
+            return snippet
+        return snippet[-limit:]
+
+    def _generate_time_series_chart(self, workflow_id: str, series: List[tuple[str, float]]) -> str:
+        if not series:
+            raise RuntimeError("Cannot render chart; time series empty")
+        dates = [item[0] for item in series]
+        values = [item[1] for item in series]
         fig, ax = plt.subplots(figsize=(8, 3))
-        ax.plot(dates, closes, color="#0B69FF", linewidth=1.6)
-        ax.set_title(f"{ticker} Closing Prices", fontsize=12)
+        ax.plot(dates, values, color="#0B69FF", linewidth=1.6)
+        ax.set_title("Price Trend", fontsize=12)
         ax.set_xlabel("Date")
-        ax.set_ylabel("Close")
+        ax.set_ylabel("Value")
         ax.grid(True, linewidth=0.3, alpha=0.5)
         fig.autofmt_xdate()
         buffer = io.BytesIO()
@@ -554,6 +801,33 @@ class LangGraphValidationOrchestrator:
         buffer.close()
         return chart_path
 
+    def _generate_fallback_chart(self, workflow_id: str, analysis_results: Dict[str, Any]) -> str:
+        steps = analysis_results.get("steps", [])
+        metrics = []
+        for step in steps:
+            for output in step.get("outputs", []):
+                label = output.get("label")
+                value = output.get("value")
+                if isinstance(value, (int, float)) and label:
+                    metrics.append((label, float(value)))
+        if not metrics:
+            raise RuntimeError("No numeric metrics available to build fallback chart")
+        labels, values = zip(*metrics[:8])
+        fig, ax = plt.subplots(figsize=(8, 3))
+        ax.bar(labels, values, color="#10B981")
+        ax.set_ylabel("Value")
+        ax.set_title("Key Metrics Snapshot")
+        ax.tick_params(axis="x", rotation=30)
+        buffer = io.BytesIO()
+        fig.savefig(buffer, format="png", bbox_inches="tight")
+        plt.close(fig)
+        chart_path = self.artifact_store.write_bytes(workflow_id, "metrics_snapshot.png", buffer.getvalue()).resolve().as_uri()
+        buffer.close()
+        return chart_path
+
+    # ------------------------------------------------------------------
+    # Rendering and delivery helpers
+    # ------------------------------------------------------------------
     def _render_report_pdf(
         self,
         *,
@@ -654,7 +928,8 @@ class LangGraphValidationOrchestrator:
             for finding in key_findings[:5]:
                 body_lines.append(f"- {finding}")
         body_lines.append("")
-        body_lines.append("Regards,\nRAVEN Validation Platform")
+        body_lines.append("Regards,")
+        body_lines.append("RAVEN Validation Platform")
 
         attachment_path = pdf_uri.replace("file://", "")
         tool.invoke(
@@ -669,70 +944,74 @@ class LangGraphValidationOrchestrator:
     # ------------------------------------------------------------------
     # Utility helpers
     # ------------------------------------------------------------------
-    def _run_python_repl(self, code: str, *, locals: Dict[str, Any]) -> str:
-        try:
-            from langchain_experimental.tools.python.tool import PythonREPLTool  # type: ignore
-        except ImportError as exc:  # pragma: no cover - dependency missing
-            raise RuntimeError(
-                "langchain-experimental must be installed to execute Python analysis snippets."
-            ) from exc
+    def _plan_overview_lines(self, plan: Dict[str, Any]) -> List[str]:
+        lines: List[str] = []
+        for tool in plan.get("data_fetch_tools", []):
+            slug = tool.get("slug")
+            description = tool.get("description")
+            arguments = tool.get("arguments", {})
+            arg_repr = ", ".join(f"{key}={value}" for key, value in arguments.items())
+            lines.append(f"Fetch {slug} ({description}) with {arg_repr}")
+        for step in plan.get("analysis_plan", []):
+            operations = step.get("operations", [])
+            op_names = ", ".join(str(op.get("label")) for op in operations)
+            lines.append(f"Analysis step '{step.get('name')}' → {op_names}")
+        return lines
 
-        tool = PythonREPLTool(locals=dict(locals))
-        result = tool.run(code)
-        if result is None:
-            raise RuntimeError("Python REPL returned no output")
-        return str(result).strip()
+    def _format_plan_detail(self, plan: Dict[str, Any]) -> str:
+        fetch_slugs = [tool.get("slug", "") for tool in plan.get("data_fetch_tools", [])]
+        analysis_names = [step.get("name", "") for step in plan.get("analysis_plan", [])]
+        return (
+            f"Plan drafted with tools: {', '.join(filter(None, fetch_slugs))}; "
+            f"analysis steps: {', '.join(filter(None, analysis_names))}."
+        )
+
+    def _format_data_collection_detail(self, executed: List[Dict[str, Any]]) -> str:
+        if not executed:
+            return "No data fetch tools executed."
+        slugs = ", ".join(item["slug"] for item in executed if item.get("slug"))
+        return f"Composio data ingested from: {slugs}."
+
+    def _format_analysis_detail(self, results: List[Dict[str, Any]]) -> str:
+        if not results:
+            return "No analysis steps executed."
+        names = ", ".join(step.get("name", "") for step in results)
+        return f"Completed hybrid analytics: {names}."
 
     @staticmethod
-    def _parse_analysis_json(raw: str) -> Dict[str, Any]:
+    def _safe_float(value: Any) -> float | None:
         try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:  # pragma: no cover - defensive guard
-            raise RuntimeError("Python REPL returned invalid JSON payload") from exc
-        if not isinstance(parsed, dict):
-            raise RuntimeError("Python REPL analysis payload malformed; expected mapping")
-        metrics = parsed.get("metrics")
-        if not isinstance(metrics, dict):
-            raise RuntimeError("Python REPL analysis payload missing 'metrics' mapping")
-        insights = parsed.get("insights", [])
-        if not isinstance(insights, list):
-            raise RuntimeError("Python REPL analysis payload 'insights' must be a list")
-        payload = dict(parsed)
-        payload["metrics"] = metrics
-        payload["insights"] = insights
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _load_json_from_path(path: Path) -> Dict[str, Any]:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"Artifact {path} did not contain a JSON object")
         return payload
 
-    @staticmethod
-    def _serialize_record(record: Any) -> Dict[str, Any]:
-        if isinstance(record, dict):
-            return dict(record)
-        if hasattr(record, "model_dump"):
-            return cast(Dict[str, Any], record.model_dump())
-        if is_dataclass(record):
-            return cast(Dict[str, Any], asdict(record))
-        if hasattr(record, "__dict__"):
-            return dict(vars(record))
-        raise TypeError(f"Unsupported record type for serialization: {type(record)!r}")
-
-    def _load_json(self, uri: str) -> Dict[str, Any]:
-        path = Path(uri.replace("file://", ""))
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
-
     def _score_validation(self, analysis_results: Dict[str, Any]) -> tuple[float, float]:
-        market = (analysis_results.get("market") or {}).get("metrics", {})
-        news = (analysis_results.get("news") or {}).get("metrics", {})
-        filings = (analysis_results.get("filings") or {}).get("metrics", {})
+        aggregated = analysis_results.get("aggregated", {})
+        price_change = float(aggregated.get("trailing_12m_adjusted_close_change", 0.0) or 0.0)
+        volatility = float(aggregated.get("annualized_volatility_(monthly)", 0.0) or 0.0)
+        sentiment = float(aggregated.get("average_sentiment", 0.0) or 0.0)
+        operating_margin = float(aggregated.get("operating_margin_(ttm)", 0.0) or 0.0)
+
         score = 0.5
-        score += float(market.get("cagr", 0.0)) * 0.4
-        score += float(news.get("avg_sentiment", 0.0)) * 0.2
-        score -= float(market.get("volatility", 0.0)) * 0.3
-        score += min(float(filings.get("filing_count", 0)), 10.0) / 100
+        score += price_change * 0.35
+        score += sentiment * 0.2
+        score += operating_margin * 0.1
+        score -= max(volatility, 0.0) * 0.25
         confidence = 0.6
-        confidence -= float(market.get("volatility", 0.0)) * 0.1
-        confidence += float(news.get("avg_sentiment", 0.0)) * 0.2
-        confidence += min(float(filings.get("filing_count", 0)), 5.0) / 50
-        return round(_clamp(score, 0.0, 1.0), 4), round(_clamp(confidence, 0.0, 1.0), 4)
+        confidence += sentiment * 0.15
+        confidence += operating_margin * 0.1
+        confidence -= max(volatility, 0.0) * 0.2
+        score = _clamp(score, 0.0, 1.0)
+        confidence = _clamp(confidence, 0.0, 1.0)
+        return round(score, 4), round(confidence, 4)
 
     @staticmethod
     def _determine_conclusion(score: float) -> str:
@@ -747,14 +1026,6 @@ class LangGraphValidationOrchestrator:
         context.setdefault("artifacts", []).append(evidence.model_dump(mode="json"))
 
     @staticmethod
-    def _record_stage_metadata(context: StageContext, stage: str, key: str, status: str, detail: str | None = None) -> None:
-        metadata = context.setdefault("metadata", {})
-        stages = metadata.setdefault("stages", {})
-        stage_entry = stages.setdefault(stage, {"steps": {}})
-        steps = stage_entry.setdefault("steps", {})
-        steps[key] = {"status": status, "detail": detail}
-
-    @staticmethod
     def _clone_context(context: StageContext | None) -> StageContext:
         if not context:
             return cast(StageContext, {})
@@ -767,3 +1038,7 @@ class LangGraphValidationOrchestrator:
             else:
                 cloned[key] = value
         return cloned
+
+
+def _clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
+    return max(minimum, min(maximum, value))

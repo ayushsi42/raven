@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from datetime import date
 from pathlib import Path
 from typing import AsyncIterator
@@ -13,11 +14,7 @@ from httpx import ASGITransport, AsyncClient
 import pytest_asyncio
 
 from hypothesis_agent.config import AppSettings, get_settings
-from hypothesis_agent.connectors.news import NewsArticle
-from hypothesis_agent.connectors.sec import FilingRecord
-from hypothesis_agent.connectors.yahoo import PriceSeries
 from hypothesis_agent.llm import BaseLLM
-from hypothesis_agent.db.migrations import upgrade_database
 from hypothesis_agent.main import create_app
 from hypothesis_agent.models.hypothesis import HypothesisRequest
 from hypothesis_agent.services.hypothesis_service import HypothesisService
@@ -26,20 +23,6 @@ from hypothesis_agent.storage.artifact_store import ArtifactStore
 
 
 class _StubLLM(BaseLLM):
-    def generate_data_plan(self, request: HypothesisRequest) -> list[str]:
-        return [
-            "Fetch historical prices",
-            "Pull SEC filings",
-            "Aggregate relevant news",
-        ]
-
-    def generate_analysis_plan(self, request: HypothesisRequest, data_overview: dict[str, object]) -> list[str]:
-        return [
-            "Calculate returns and volatility",
-            "Summarize recent filings",
-            "Score sentiment dispersion",
-        ]
-
     def generate_detailed_analysis(self, request: HypothesisRequest, metrics_overview: dict[str, object]) -> str:
         return "The hypothesis remains plausible given momentum, filings cadence, and sentiment balance."
 
@@ -58,69 +41,139 @@ class _StubLLM(BaseLLM):
         }
 
 
-class _StubYahoo:
-    def fetch_daily_prices(self, ticker: str, start: date, end: date) -> PriceSeries:
-        prices = [
-            {"date": "2025-01-01", "open": 100.0, "high": 102.0, "low": 99.0, "close": 101.0, "adj_close": 101.0, "volume": 1_000_000},
-            {"date": "2025-01-02", "open": 101.0, "high": 103.0, "low": 100.0, "close": 102.5, "adj_close": 102.5, "volume": 1_200_000},
-            {"date": "2025-01-03", "open": 102.5, "high": 104.0, "low": 101.5, "close": 103.5, "adj_close": 103.5, "volume": 1_100_000},
+STUB_TOOL_RESPONSES: dict[str, dict[str, object]] = {
+    "ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED": {
+        "Monthly Adjusted Time Series": {
+            "2024-01-31": {"5. adjusted close": "100.0"},
+            "2024-02-29": {"5. adjusted close": "102.0"},
+            "2024-03-31": {"5. adjusted close": "104.5"},
+            "2024-04-30": {"5. adjusted close": "106.0"},
+            "2024-05-31": {"5. adjusted close": "108.5"},
+            "2024-06-30": {"5. adjusted close": "112.0"},
+        }
+    },
+    "ALPHA_VANTAGE_COMPANY_OVERVIEW": {
+        "OperatingMarginTTM": "0.21",
+        "ProfitMargin": "0.15",
+    },
+    "ALPHA_VANTAGE_NEWS_SENTIMENT": {
+        "feed": [
+            {"overall_sentiment_score": 0.3},
+            {"overall_sentiment_score": 0.1},
         ]
-        return PriceSeries(ticker=ticker, prices=prices)
-
-
-class _StubSec:
-    def fetch_recent_filings(self, ticker: str, limit: int = 5) -> list[FilingRecord]:
-        return [
-            FilingRecord(accession="0000001", filing_type="10-K", filed="2025-01-10", url="https://example.com/10k", company_name=f"{ticker} Inc"),
-            FilingRecord(accession="0000002", filing_type="10-Q", filed="2024-11-01", url="https://example.com/10q", company_name=f"{ticker} Inc"),
+    },
+    "ALPHA_VANTAGE_CASH_FLOW": {
+        "annualReports": [
+            {"operatingCashflow": "1200000"},
+            {"operatingCashflow": "900000"},
         ]
-
-
-class _StubNews:
-    def fetch_sentiment(self, tickers: list[str], limit: int = 5) -> list[NewsArticle]:
-        return [
-            NewsArticle(title="Growth outlook brightens", summary="", url="https://example.com/a", sentiment=0.4),
-            NewsArticle(title="New product launch", summary="", url="https://example.com/b", sentiment=0.2),
+    },
+    "ALPHA_VANTAGE_BALANCE_SHEET": {
+        "annualReports": [
+            {"totalAssets": "5000000", "totalLiabilities": "2100000"},
         ]
+    },
+    "gmail_send_email": {"status": "queued"},
+}
 
 
 class _StubTool:
-    def __init__(self, sink: list[dict[str, object]]) -> None:
+    def __init__(self, sink: list[dict[str, object]], slug: str, responses: dict[str, dict[str, object]]) -> None:
         self._sink = sink
+        self._slug = slug
+        self._responses = responses
 
-    def invoke(self, payload: dict[str, object]) -> None:
-        self._sink.append(payload)
+    def invoke(self, payload: dict[str, object]) -> dict[str, object]:
+        record = {"slug": self._slug, "arguments": copy.deepcopy(payload)}
+        self._sink.append(record)
+        response = self._responses.get(self._slug, {"ok": True})
+        return copy.deepcopy(response)
 
 
 class _StubToolSet:
-    def __init__(self) -> None:
+    def __init__(self, responses: dict[str, dict[str, object]]) -> None:
         self.invocations: list[dict[str, object]] = []
+        self._responses = responses
+
+    def configure(self, responses: dict[str, dict[str, object]]) -> None:
+        self._responses = responses
 
     def get_tool(self, name: str) -> _StubTool:
-        return _StubTool(self.invocations)
+        return _StubTool(self.invocations, name, self._responses)
+
+
+class _FakeSnapshot:
+    def __init__(self, data: dict | None) -> None:
+        self._data = data
+
+    @property
+    def exists(self) -> bool:
+        return self._data is not None
+
+    def to_dict(self) -> dict | None:
+        return self._data
+
+
+class _FakeDocumentReference:
+    def __init__(self, storage: dict, key: str) -> None:
+        self._storage = storage
+        self._key = key
+
+    def set(self, data: dict) -> None:
+        self._storage[self._key] = data
+
+    def get(self) -> _FakeSnapshot:
+        return _FakeSnapshot(self._storage.get(self._key))
+
+
+class _FakeCollection:
+    def __init__(self, storage: dict) -> None:
+        self._storage = storage
+
+    def document(self, key: str) -> _FakeDocumentReference:
+        return _FakeDocumentReference(self._storage, key)
+
+
+class _FakeFirestoreClient:
+    def __init__(self) -> None:
+        self._storage: dict[str, dict[str, dict]] = {}
+
+    def collection(self, name: str) -> _FakeCollection:
+        bucket = self._storage.setdefault(name, {})
+        return _FakeCollection(bucket)
+
+
+class _FakeFirebaseHandle:
+    def __init__(self, collection: str = "hypotheses") -> None:
+        self.client = _FakeFirestoreClient()
+        self.collection = collection
+
+    async def dispose(self) -> None:
+        pass
 
 
 @pytest_asyncio.fixture
 async def test_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[FastAPI]:
-    """Provide an application instance backed by a temporary SQLite database."""
-
-    db_path = tmp_path / "test.db"
-    monkeypatch.setenv("RAVEN_DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+    """Provide an application instance backed by a fake Firestore datastore."""
+    firebase_handle = _FakeFirebaseHandle()
+    monkeypatch.setattr(
+        "hypothesis_agent.db.firebase.initialize_firebase",
+        lambda settings: firebase_handle,
+    )
     artifact_root = tmp_path / "artifacts"
     settings = AppSettings(
         notification_email="reports@example.com",
         artifact_store_path=str(artifact_root),
     )
-    toolset = _StubToolSet()
+    toolset = _StubToolSet(copy.deepcopy(STUB_TOOL_RESPONSES))
 
     def _factory() -> LangGraphValidationOrchestrator:
         artifact_store = ArtifactStore.from_path(settings.artifact_store_path)
+        toolset.invocations.clear()
+        toolset.configure(copy.deepcopy(STUB_TOOL_RESPONSES))
         return LangGraphValidationOrchestrator(
             settings=settings,
             llm=_StubLLM(),
-            yahoo_client=_StubYahoo(),
-            sec_client=_StubSec(),
-            news_client=_StubNews(),
             artifact_store=artifact_store,
             toolset=toolset,
         )
@@ -131,7 +184,6 @@ async def test_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIter
     )
     get_settings.cache_clear()  # type: ignore[attr-defined]
     app = create_app()
-    await upgrade_database(settings.database_url)
     app.state.stub_toolset = toolset
     app.state.hypothesis_service = HypothesisService(
         repository=app.state.hypothesis_repository,
@@ -202,7 +254,9 @@ async def test_submit_and_retrieve_hypothesis(test_app) -> None:
     if status_data["workflow_status"] == "COMPLETED":
         assert status_data["validation"]["current_stage"] == "delivery"
         assert status_data["validation"]["milestones"][-1]["name"] == "delivery"
-        assert test_app.state.stub_toolset.invocations, "Delivery stage should send a notification"
+        email_calls = [call for call in test_app.state.stub_toolset.invocations if call["slug"] == "gmail_send_email"]
+        assert email_calls, "Delivery stage should send a notification"
+        assert email_calls[0]["arguments"].get("attachments"), "Notification should include report attachment"
 
 
 @pytest.mark.asyncio
