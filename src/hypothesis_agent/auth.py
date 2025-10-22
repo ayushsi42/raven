@@ -20,6 +20,9 @@ async def require_authenticated_user(
 ) -> None:
     """Authorize a request using an API key or Firebase ID token."""
 
+    if not settings.require_authentication:
+        return
+
     configured_key = (settings.api_key or "").strip() or None
     provided_key = (api_key_header or "").strip() or None
     if not provided_key:

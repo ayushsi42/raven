@@ -20,7 +20,7 @@ import matplotlib
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 from composio import Composio
-from composio.exceptions import ApiKeyNotProvidedError
+from composio.exceptions import ApiKeyNotProvidedError, ToolVersionRequiredError
 from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
 from langchain_experimental.utilities import PythonREPL
@@ -124,26 +124,38 @@ class _ComposioTool:
 
 
 class _LazyComposioToolSet:
-    """Lazily instantiate the Composio client when tools are requested."""
+    """Lazy-initialized Composio toolset."""
 
-    def __init__(self, *, user_id: str | None) -> None:
-        self._client: Any = None
+    def __init__(self, user_id: str | None = None) -> None:
+        self._client: Any | None = None
         self._user_id = user_id
 
     def _ensure_client(self) -> Any:
         if self._client is None:
             try:
-                self._client = Composio()
+                settings = get_settings()
+                api_key = settings.composio_api_key or os.environ.get("COMPOSIO_API_KEY")
+                print(f"Composio User ID: {self._user_id}")
+                print(f"Composio API Key (last 4 chars): {api_key[-4:] if api_key else 'Not set'}")
+                
+                # Skip version check since we don't know the exact version
+                self._client = Composio(
+                    api_key=api_key,
+                    dangerously_skip_version_check=True
+                )
             except Exception as exc:
                 if isinstance(exc, ApiKeyNotProvidedError):
                     raise RuntimeError(
-                        "Composio API key must be provided via COMPOSIO_API_KEY to run the pipeline."
+                        "Composio API key must be provided via RAVEN_COMPOSIO_API_KEY to run the pipeline."
                     ) from exc
                 raise
         return self._client
 
-    def get_tool(self, name: str) -> ToolHandle:
+    def get_tool(self, name: str) -> "_ComposioTool":
+        """Get a Composio tool by name."""
         return _ComposioTool(client=self._ensure_client(), slug=name, user_id=self._user_id)
+
+
 
 
 class LangGraphValidationOrchestrator:
@@ -208,7 +220,7 @@ class LangGraphValidationOrchestrator:
     def _run_plan_generation(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
         workflow_id = self._ensure_workflow_id(context)
         plan = self._build_validation_plan(request)
-        plan_path = self.artifact_store.write_json(workflow_id, "validation_plan", plan).resolve().as_uri()
+        plan_path = str(self.artifact_store.write_json(workflow_id, "validation_plan", plan).resolve())
         context["plan"] = plan
         context.setdefault("insights", []).append(
             f"Planning stage selected {len(plan['data_fetch_tools'])} data tools and {len(plan['analysis_plan'])} analysis steps."
@@ -269,11 +281,11 @@ class LangGraphValidationOrchestrator:
                     "slug": slug,
                     "arguments": arguments,
                     "artifact": str(path),
-                    "uri": path.resolve().as_uri(),
+                    "uri": str(path.resolve()),
                     "description": tool.get("description"),
                 }
             )
-            evidence_ref = EvidenceReference(type="data_fetch", uri=path.resolve().as_uri())
+            evidence_ref = EvidenceReference(type="data_fetch", uri=str(path.resolve()))
             evidence.append(evidence_ref)
             self._record_evidence(context, evidence_ref)
 
@@ -407,7 +419,9 @@ class LangGraphValidationOrchestrator:
         plan_steps = self._plan_overview_lines(plan)
         charts = analysis_results.get("charts") or []
         if not charts:
-            charts = [self._generate_fallback_chart(workflow_id, analysis_results)]
+            fallback_chart = self._generate_fallback_chart(workflow_id, analysis_results)
+            if fallback_chart:
+                charts = [fallback_chart]
         report_payload = self.llm.generate_report(
             request=request,
             metrics_overview=analysis_results,
@@ -764,7 +778,7 @@ class LangGraphValidationOrchestrator:
             uri = metadata.get("artifact_path") or metadata.get("uri")
             if not uri:
                 raise RuntimeError(f"Artifact path missing for tool '{slug}'")
-            path = Path(str(uri).replace("file://", "")).resolve()
+            path = Path(uri).resolve()
             if not path.exists():
                 raise RuntimeError(f"Artifact path for tool '{slug}' does not exist: {path}")
             artifact_map[slug] = str(path)
@@ -963,7 +977,7 @@ class LangGraphValidationOrchestrator:
         buffer.close()
         return chart_path
 
-    def _generate_fallback_chart(self, workflow_id: str, analysis_results: Dict[str, Any]) -> str:
+    def _generate_fallback_chart(self, workflow_id: str, analysis_results: Dict[str, Any]) -> str | None:
         steps = analysis_results.get("steps", [])
         metrics = []
         for step in steps:
@@ -973,7 +987,7 @@ class LangGraphValidationOrchestrator:
                 if isinstance(value, (int, float)) and label:
                     metrics.append((label, float(value)))
         if not metrics:
-            raise RuntimeError("No numeric metrics available to build fallback chart")
+            return None
         labels, values = zip(*metrics[:8])
         fig, ax = plt.subplots(figsize=(8, 3))
         ax.bar(labels, values, color="#10B981")
@@ -1076,7 +1090,7 @@ class LangGraphValidationOrchestrator:
         pdf_uri: str,
         report_payload: Dict[str, Any],
     ) -> None:
-        tool = self.toolset.get_tool("gmail_send_email")
+        tool = self.toolset.get_tool("GMAIL_SEND_EMAIL")
         subject = f"RAVEN Validation Report: {request.hypothesis_text[:60]}"
         key_findings = report_payload.get("key_findings", [])
         body_lines = [

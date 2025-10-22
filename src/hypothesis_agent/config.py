@@ -17,7 +17,7 @@ class AppSettings(BaseSettings):
     temporal_address: str = "localhost:7233"
     temporal_workflow: str = "HypothesisValidationWorkflow"
     artifact_store_path: str = "./data/artifacts"
-    alpha_vantage_api_key: str = "demo"
+    alpha_vantage_api_key: str = "U77YNHBLD6CUB9KU"
     sec_user_agent: str = "RAVEN/0.1 (support@example.com)"
     notification_email: str | None = None
     api_key: str | None = None
@@ -40,7 +40,7 @@ class AppSettings(BaseSettings):
     firebase_web_measurement_id: str | None = None
     use_firestore: bool = True
 
-    model_config = SettingsConfigDict(env_prefix="RAVEN_", case_sensitive=False, env_file=".env")
+    model_config = SettingsConfigDict(env_prefix="RAVEN_", case_sensitive=False, env_file=".env",extra="ignore")
 
 
 @lru_cache
