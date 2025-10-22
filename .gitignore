@@ -7,3 +7,4 @@ test.ipynb
 credentials.json
 .venv
 data
+.pytest_artifacts

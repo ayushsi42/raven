@@ -39,6 +39,7 @@ class AppSettings(BaseSettings):
     firebase_web_app_id: str | None = None
     firebase_web_measurement_id: str | None = None
     use_firestore: bool = True
+    use_temporal_runtime: bool = False
 
     model_config = SettingsConfigDict(env_prefix="RAVEN_", case_sensitive=False, env_file=".env",extra="ignore")
 

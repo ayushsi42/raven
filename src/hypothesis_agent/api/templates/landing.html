@@ -4,9 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>RAVEN Hypothesis Studio</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
     <style>
       :root {
         color-scheme: dark;
@@ -57,24 +57,27 @@
 
       header {
         display: grid;
-        gap: 0.5rem;
-        padding-bottom: 1rem;
+        gap: 1rem;
+        padding-bottom: 1.25rem;
         border-bottom: 1px solid var(--border);
+        max-width: 920px;
       }
 
       header h1 {
         margin: 0;
-        font-size: 2rem;
-        font-weight: 300;
-        letter-spacing: -0.02em;
+        font-family: "Space Grotesk", "Inter", system-ui, -apple-system, sans-serif;
+        font-size: clamp(2.75rem, 6vw, 3.75rem);
+        font-weight: 600;
+        letter-spacing: -0.045em;
       }
 
       header p {
         margin: 0;
-        max-width: 65ch;
+        max-width: 54ch;
         color: var(--text-muted);
-        font-weight: 300;
-        line-height: 1.6;
+        font-weight: 400;
+        line-height: 1.55;
+        font-size: clamp(1rem, 1.9vw, 1.1rem);
       }
 
       .content {
@@ -156,49 +159,6 @@
 
       .form-row.wrap {
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      }
-
-      .form-field {
-        display: flex;
-        flex-direction: column;
-      }
-
-      button {
-        padding: 0.875rem 2rem;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        background: var(--accent-soft);
-        color: var(--text-primary);
-        font-weight: 500;
-        font-size: 13px;
-        letter-spacing: 0.02em;
-        cursor: pointer;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        font-family: inherit;
-        text-transform: uppercase;
-        justify-self: start;
-      }
-
-      button:hover {
-        background: var(--accent-hover);
-        border-color: var(--border-focus);
-        transform: translateY(-1px);
-      }
-
-      button:active {
-        transform: translateY(0);
-      }
-
-      button:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
-        transform: none;
-      }
-
-      .button-destructive {
-        border-color: rgba(248, 113, 113, 0.35);
-        background: rgba(248, 113, 113, 0.12);
-        color: rgba(248, 113, 113, 0.9);
       }
 
       .button-destructive:hover:not(:disabled) {
@@ -736,9 +696,8 @@
       <header>
         <h1>RAVEN</h1>
         <p>
-          Submit a financial hypothesis to trigger LangGraph agents, Composio-powered data ingest, and
-          Temporal-style milestones. Track the orchestration in real-time, then inspect the fully audited
-          validation summary.
+          A minimalist studio for hypothesis validation: outline your thesis, let LangGraph and Composio pull
+          the evidence, then download the audit-ready briefing in minutes.
         </p>
         <div class="auth-status">
           <span class="pill small" id="auth-user-chip">Guest</span>

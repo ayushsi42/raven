@@ -47,12 +47,20 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         repository = FirestoreHypothesisRepository(firebase_handle.client, firebase_handle.collection)
     else:
         repository = InMemoryHypothesisRepository()
-    workflow_client = HypothesisWorkflowClient(
-        namespace=app_settings.temporal_namespace,
-        task_queue=app_settings.temporal_task_queue,
-        workflow=app_settings.temporal_workflow,
-        address=app_settings.temporal_address,
-    )
+    workflow_client: HypothesisWorkflowClient
+    if app_settings.use_temporal_runtime:
+        try:
+            from hypothesis_agent.workflows.temporal_runtime import TemporalWorkflowRuntime  # local import to avoid optional dependency
+        except ModuleNotFoundError as exc:
+            raise RuntimeError("Temporal runtime requires the 'temporalio' package. Install optional dependency to enable resumable workflows.") from exc
+        workflow_client = TemporalWorkflowRuntime(app_settings)
+    else:
+        workflow_client = HypothesisWorkflowClient(
+            namespace=app_settings.temporal_namespace,
+            task_queue=app_settings.temporal_task_queue,
+            workflow=app_settings.temporal_workflow,
+            address=app_settings.temporal_address,
+        )
     hypothesis_service = HypothesisService(
         repository=repository,
         workflow_client=workflow_client,

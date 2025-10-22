@@ -137,6 +137,6 @@ async def run_report_generation(payload: Dict) -> Dict:
 
 
 async def run_delivery(payload: Dict) -> Dict:
-    """Deliver the generated report via the configured Composio connector."""
+    """Record that the generated report is available for download."""
 
     return _load_orchestrator_result("delivery", payload)

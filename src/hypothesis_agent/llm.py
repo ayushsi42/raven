@@ -59,6 +59,7 @@ class BaseLLM(ABC):
         request: HypothesisRequest,
         analysis_plan: List[Dict[str, Any]],
         data_artifacts: Dict[str, str],
+        data_format: Dict[str, str],
         attempt: int,
         history: List[Dict[str, str]],
     ) -> str:  # pragma: no cover - interface
@@ -165,6 +166,7 @@ class OpenAILLM(BaseLLM):
         request: HypothesisRequest,
         analysis_plan: List[Dict[str, Any]],
         data_artifacts: Dict[str, str],
+        data_format: Dict[str, str],
         attempt: int,
         history: List[Dict[str, str]],
     ) -> str:
@@ -180,6 +182,7 @@ class OpenAILLM(BaseLLM):
             "attempt": attempt,
             "analysis_plan": analysis_plan,
             "data_artifacts": data_artifacts,
+            "data_format": data_format,
             "execution_history": history,
         }
         user_prompt = json.dumps(user_payload, ensure_ascii=False, indent=2)

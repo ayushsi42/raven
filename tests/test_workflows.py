@@ -51,6 +51,7 @@ class _StubLLM(BaseLLM):
         request: HypothesisRequest,
         analysis_plan: list[dict[str, object]],
         data_artifacts: dict[str, str],
+        data_format: dict[str, str],
         attempt: int,
         history: list[dict[str, str]],
     ) -> str:
@@ -110,7 +111,6 @@ STUB_TOOL_RESPONSES: dict[str, dict[str, object]] = {
             {"totalAssets": "5000000", "totalLiabilities": "2100000"},
         ]
     },
-    "gmail_send_email": {"status": "queued"},
 }
 
 
@@ -147,7 +147,6 @@ def stub_toolset() -> _StubToolSet:
 @pytest.fixture(autouse=True)
 def stub_orchestrator(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stub_toolset: _StubToolSet) -> None:
     settings = AppSettings(
-        notification_email="reports@example.com",
         artifact_store_path=str(tmp_path / "artifacts"),
     )
 
@@ -200,9 +199,7 @@ async def test_workflow_client_runs_pipeline_without_temporal(stub_toolset: _Stu
     assert execution.milestones[0].name == "plan_generation"
     assert final_summary.milestones[-1].name == "delivery"
     assert final_summary.current_stage == "delivery"
-    email_calls = [call for call in stub_toolset.invocations if call["slug"] == "gmail_send_email"]
-    assert email_calls, "Delivery stage should invoke the notification tool"
-    assert email_calls[0]["arguments"].get("attachments"), "Email payload should include attachments"
+    assert final_summary.milestones[-1].detail == "Report available for download."
 
     await client.close()
 
@@ -236,6 +233,7 @@ async def test_workflow_client_handles_human_review() -> None:
     final_summary = await client.resume(result.workflow_id, result.workflow_run_id, "approved")
     assert final_summary.current_stage == "delivery"
     assert final_summary.milestones[-1].name == "delivery"
+    assert final_summary.milestones[-1].detail == "Report available for download."
     human_milestone_after = next(m for m in final_summary.milestones if m.name == "human_review")
     assert human_milestone_after.status == MilestoneStatus.COMPLETED
 

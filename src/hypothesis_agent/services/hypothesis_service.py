@@ -16,10 +16,19 @@ from hypothesis_agent.repositories.hypothesis_repository import (
     HypothesisRecord,
     HypothesisRepository,
 )
-from hypothesis_agent.workflows.hypothesis_workflow import (
-    HypothesisWorkflowClient,
-    WorkflowSubmissionResult,
-)
+from typing import Protocol, runtime_checkable
+
+from hypothesis_agent.workflows.hypothesis_workflow import WorkflowSubmissionResult
+
+
+@runtime_checkable
+class WorkflowRuntime(Protocol):
+    async def submit(self, hypothesis_id: UUID, hypothesis: HypothesisRequest) -> WorkflowSubmissionResult: ...
+    async def describe(self, workflow_id: str, workflow_run_id: str): ...
+    async def fetch_summary(self, workflow_id: str, workflow_run_id: str) -> ValidationSummary: ...
+    async def resume(self, workflow_id: str, workflow_run_id: str, decision: str = "approved") -> ValidationSummary: ...
+    async def cancel(self, workflow_id: str, workflow_run_id: str) -> ValidationSummary: ...
+    async def close(self) -> None: ...
 
 
 @dataclass(slots=True)
@@ -27,7 +36,7 @@ class HypothesisService:
     """Coordinate hypothesis submissions and persistence."""
 
     repository: HypothesisRepository
-    workflow_client: HypothesisWorkflowClient
+    workflow_client: WorkflowRuntime
 
     async def submit(self, hypothesis: HypothesisRequest) -> HypothesisResponse:
         """Submit a hypothesis, persist it, and return the response contract."""

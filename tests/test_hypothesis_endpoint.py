@@ -52,6 +52,7 @@ class _StubLLM(BaseLLM):
         request: HypothesisRequest,
         analysis_plan: list[dict[str, object]],
         data_artifacts: dict[str, str],
+        data_format: dict[str, str],
         attempt: int,
         history: list[dict[str, str]],
     ) -> str:
@@ -111,7 +112,6 @@ STUB_TOOL_RESPONSES: dict[str, dict[str, object]] = {
             {"totalAssets": "5000000", "totalLiabilities": "2100000"},
         ]
     },
-    "gmail_send_email": {"status": "queued"},
 }
 
 
@@ -204,7 +204,6 @@ async def test_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIter
     )
     artifact_root = tmp_path / "artifacts"
     settings = AppSettings(
-        notification_email="reports@example.com",
         artifact_store_path=str(artifact_root),
     )
     toolset = _StubToolSet(copy.deepcopy(STUB_TOOL_RESPONSES))
@@ -296,9 +295,10 @@ async def test_submit_and_retrieve_hypothesis(test_app) -> None:
     if status_data["workflow_status"] == "COMPLETED":
         assert status_data["validation"]["current_stage"] == "delivery"
         assert status_data["validation"]["milestones"][-1]["name"] == "delivery"
-        email_calls = [call for call in test_app.state.stub_toolset.invocations if call["slug"] == "gmail_send_email"]
-        assert email_calls, "Delivery stage should send a notification"
-        assert email_calls[0]["arguments"].get("attachments"), "Notification should include report attachment"
+        assert (
+            status_data["validation"]["milestones"][-1]["detail"]
+            == "Report available for download."
+        )
 
 
 @pytest.mark.asyncio
@@ -323,6 +323,7 @@ async def test_get_unknown_hypothesis_status_returns_404(test_app) -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"].startswith("Hypothesis")
+
 
 
 @pytest.mark.asyncio

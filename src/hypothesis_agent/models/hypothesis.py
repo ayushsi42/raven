@@ -105,3 +105,4 @@ class ResumeRequest(BaseModel):
         default="approved",
         description="Outcome of the manual review step.",
     )
+

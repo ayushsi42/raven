@@ -67,7 +67,7 @@ def _make_validation_summary() -> ValidationSummary:
         WorkflowMilestone(name="detailed_analysis", status=MilestoneStatus.COMPLETED, detail="Narrative synthesized."),
         WorkflowMilestone(name="report_generation", status=MilestoneStatus.COMPLETED, detail="Report compiled."),
         WorkflowMilestone(name="human_review", status=MilestoneStatus.COMPLETED, detail="Review skipped."),
-        WorkflowMilestone(name="delivery", status=MilestoneStatus.COMPLETED, detail="Delivered to stakeholders."),
+    WorkflowMilestone(name="delivery", status=MilestoneStatus.COMPLETED, detail="Report available for download."),
     ]
     return ValidationSummary(
         score=0.61,

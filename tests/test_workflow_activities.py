@@ -55,6 +55,7 @@ class _StubLLM(BaseLLM):
             request: HypothesisRequest,
             analysis_plan: List[Dict[str, Any]],
             data_artifacts: Dict[str, str],
+            data_format: Dict[str, str],
             attempt: int,
             history: List[Dict[str, str]],
         ) -> str:
@@ -114,7 +115,6 @@ STUB_TOOL_RESPONSES: Dict[str, Dict[str, Any]] = {
             {"totalAssets": "5000000", "totalLiabilities": "2100000"},
         ]
     },
-    "gmail_send_email": {"status": "queued"},
 }
 
 
@@ -143,7 +143,6 @@ class _StubToolSet:
 @pytest.fixture
 def stub_orchestrator(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Tuple[LangGraphValidationOrchestrator, _StubToolSet]:
     settings = AppSettings(
-        notification_email="reports@example.com",
         artifact_store_path=str(tmp_path / "artifacts"),
     )
     artifact_store = ArtifactStore.from_path(settings.artifact_store_path)
@@ -217,8 +216,7 @@ async def test_pipeline_stages_execute(stub_orchestrator) -> None:
     assert pdf_path.exists()
     fetch_slugs = {call["slug"] for call in toolset.invocations if call["slug"].startswith("ALPHA_VANTAGE")}
     assert "ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED" in fetch_slugs
-    email_calls = [call for call in toolset.invocations if call["slug"] == "gmail_send_email"]
-    assert email_calls and str(pdf_path) in email_calls[0]["arguments"].get("attachments", [])
     assert summary["score"] >= 0.0
     assert summary["confidence"] >= 0.0
     assert milestones[-1]["name"] == "delivery"
+    assert milestones[-1]["detail"] == "Report available for download."

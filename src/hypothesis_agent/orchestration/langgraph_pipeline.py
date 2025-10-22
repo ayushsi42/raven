@@ -20,7 +20,7 @@ import matplotlib
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 from composio import Composio
-from composio.exceptions import ApiKeyNotProvidedError, ToolVersionRequiredError
+from composio.exceptions import ApiKeyNotProvidedError
 from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
 from langchain_experimental.utilities import PythonREPL
@@ -74,6 +74,70 @@ SAFE_BUILTINS = {
     "KeyError": KeyError,
     "RuntimeError": RuntimeError,
 }
+
+
+def get_data_format(artifact_map: Dict[str, str]) -> Dict[str, str]:
+    """Produce compact JSON schema hints for each artifact path."""
+    summaries: Dict[str, str] = {}
+    for slug, path_str in artifact_map.items():
+        try:
+            payload = json.loads(Path(path_str).read_text(encoding="utf-8"))
+        except Exception:
+            # Ignore unreadable artifacts; the LLM will rely on raw files.
+            continue
+        summary_payload = _summarize_payload(payload)
+        try:
+            summary_text = json.dumps(summary_payload, ensure_ascii=False, separators=(",", ":"))
+        except TypeError:
+            summary_text = str(summary_payload)
+        if len(summary_text) > 400:
+            summary_text = summary_text[:397] + "..."
+        summaries[slug] = summary_text
+    return summaries
+
+
+def _summarize_payload(payload: Any, depth: int = 0) -> Any:
+    if isinstance(payload, dict):
+        keys = list(payload.keys())
+        summary: Dict[str, Any] = {"keys": keys[:8]}
+        first_key = keys[0] if keys else None
+        if first_key is not None:
+            summary["sample_key"] = first_key
+            summary["sample"] = _summarize_value(payload[first_key], depth + 1)
+        return summary
+    if isinstance(payload, list):
+        summary_list: Dict[str, Any] = {"type": "array", "length": len(payload)}
+        if payload:
+            summary_list["sample"] = _summarize_value(payload[0], depth + 1)
+        return summary_list
+    return _summarize_value(payload, depth)
+
+
+def _summarize_value(value: Any, depth: int) -> Any:
+    if depth >= 2:
+        if isinstance(value, dict):
+            return {"keys": list(value.keys())[:6]}
+        if isinstance(value, list):
+            return {"type": "array", "length": len(value)}
+        return _trim_scalar(value)
+    if isinstance(value, dict):
+        trimmed: Dict[str, Any] = {}
+        for index, (key, nested) in enumerate(value.items()):
+            if index >= 4:
+                break
+            trimmed[key] = _summarize_value(nested, depth + 1)
+        return trimmed
+    if isinstance(value, list):
+        if not value:
+            return []
+        return [_summarize_value(value[0], depth + 1)]
+    return _trim_scalar(value)
+
+
+def _trim_scalar(value: Any) -> Any:
+    if isinstance(value, str) and len(value) > 60:
+        return value[:57] + "..."
+    return value
 
 
 @dataclass(slots=True)
@@ -139,10 +203,24 @@ class _LazyComposioToolSet:
                 print(f"Composio API Key (last 4 chars): {api_key[-4:] if api_key else 'Not set'}")
                 
                 # Skip version check since we don't know the exact version
-                self._client = Composio(
-                    api_key=api_key,
-                    dangerously_skip_version_check=True
-                )
+                try:
+                    self._client = Composio(
+                        api_key=api_key,
+                        dangerously_skip_version_check=True,
+                    )
+                except TypeError:
+                    # Older SDK versions may not accept keyword arguments; fall back to positional init.
+                    self._client = Composio()
+                    if api_key:
+                        # Best-effort compatibility hook for legacy clients exposing set_api_key/authenticate helpers.
+                        for attr in ("set_api_key", "authenticate", "configure"):
+                            if hasattr(self._client, attr):
+                                method = getattr(self._client, attr)
+                                try:
+                                    method(api_key=api_key)
+                                except TypeError:
+                                    method(api_key)
+                                break
             except Exception as exc:
                 if isinstance(exc, ApiKeyNotProvidedError):
                     raise RuntimeError(
@@ -220,13 +298,16 @@ class LangGraphValidationOrchestrator:
     def _run_plan_generation(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
         workflow_id = self._ensure_workflow_id(context)
         plan = self._build_validation_plan(request)
-        plan_path = str(self.artifact_store.write_json(workflow_id, "validation_plan", plan).resolve())
+        plan_location = self.artifact_store.write_json(workflow_id, "validation_plan", plan).resolve()
+        plan_path = str(plan_location)
         context["plan"] = plan
         context.setdefault("insights", []).append(
             f"Planning stage selected {len(plan['data_fetch_tools'])} data tools and {len(plan['analysis_plan'])} analysis steps."
         )
         metadata = context.setdefault("metadata", {})
-        metadata.setdefault("plan", {})["artifact"] = plan_path
+        plan_metadata = metadata.setdefault("plan", {})
+        plan_metadata["artifact"] = plan_path
+        plan_metadata["artifact_uri"] = plan_location.as_uri()
         data_tool_count = len(plan.get("data_fetch_tools", []))
         analysis_step_count = len(plan.get("analysis_plan", []))
         self._append_workflow_log(
@@ -245,7 +326,7 @@ class LangGraphValidationOrchestrator:
             status=MilestoneStatus.COMPLETED,
             detail=self._format_plan_detail(plan),
         )
-        evidence = [EvidenceReference(type="validation_plan", uri=plan_path)]
+        evidence = [EvidenceReference(type="validation_plan", uri=plan_location.as_uri())]
         self._record_evidence(context, evidence[0])
         self._maybe_add_workflow_log_evidence(context, evidence)
         return StageExecutionResult(context=context, milestone=milestone, evidence=evidence)
@@ -276,22 +357,25 @@ class LangGraphValidationOrchestrator:
             }
             artifact_name = f"data_{index:02d}_{slug.lower()}"
             path = self.artifact_store.write_json(workflow_id, artifact_name, payload)
+            path_resolved = path.resolve()
+            path_uri = path_resolved.as_uri()
             executed.append(
                 {
                     "slug": slug,
                     "arguments": arguments,
-                    "artifact": str(path),
-                    "uri": str(path.resolve()),
+                    "artifact": str(path_resolved),
+                    "uri": path_uri,
                     "description": tool.get("description"),
                 }
             )
-            evidence_ref = EvidenceReference(type="data_fetch", uri=str(path.resolve()))
+            evidence_ref = EvidenceReference(type="data_fetch", uri=path_uri)
             evidence.append(evidence_ref)
             self._record_evidence(context, evidence_ref)
 
         context["data_sources"] = {
             item["slug"]: {
-                "artifact_path": item["uri"],
+                "artifact_path": item["artifact"],
+                "artifact_uri": item["uri"],
                 "arguments": item["arguments"],
                 "description": item.get("description"),
             }
@@ -466,33 +550,22 @@ class LangGraphValidationOrchestrator:
         return StageExecutionResult(context=context, milestone=milestone, evidence=evidence, summary=summary)
 
     def _run_delivery(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
+        # Delivery stage now finalises metadata so the portal can expose the downloadable report.
         report = context.get("report") or {}
         pdf_path = report.get("pdf_path")
         payload = report.get("payload") or {}
         if not pdf_path or not payload:
             raise RuntimeError("Report assets missing; run report_generation stage first.")
 
-        recipient = self.settings.notification_email
-        if not recipient:
-            raise RuntimeError("notification_email must be configured for delivery stage")
-
-        self._send_report_via_tool(
-            recipient=recipient,
-            request=request,
-            pdf_uri=pdf_path,
-            report_payload=payload,
-        )
-        context.setdefault("insights", []).append(f"Report delivered to {recipient} via Composio tool router.")
+        context.setdefault("insights", []).append("Report ready for download via the RAVEN portal.")
         self._append_workflow_log(
             context,
-            (
-                "Stage delivery completed; report dispatched to {recipient}."
-            ).format(recipient=recipient),
+            "Stage delivery completed; report published for download.",
         )
         milestone = WorkflowMilestone(
             name="delivery",
             status=MilestoneStatus.COMPLETED,
-            detail=f"Report emailed to {recipient}.",
+            detail="Report available for download.",
         )
         evidence: List[EvidenceReference] = []
         self._maybe_add_workflow_log_evidence(context, evidence)
@@ -787,6 +860,7 @@ class LangGraphValidationOrchestrator:
         prompt_history: List[Dict[str, str]] = []
         log_entries: List[str] = []
         log_uri: Optional[str] = None
+        data_format = get_data_format(artifact_map)
 
         def _persist_log() -> str:
             nonlocal log_uri
@@ -804,6 +878,7 @@ class LangGraphValidationOrchestrator:
                 request=request,
                 analysis_plan=analysis_plan,
                 data_artifacts=artifact_map,
+                data_format=data_format,
                 attempt=attempt,
                 history=prompt_history,
             )
@@ -1081,41 +1156,6 @@ class LangGraphValidationOrchestrator:
         buffer.close()
         pdf_path = self.artifact_store.write_bytes(workflow_id, "validation_report.pdf", pdf_bytes).resolve().as_uri()
         return pdf_path
-
-    def _send_report_via_tool(
-        self,
-        *,
-        recipient: str,
-        request: HypothesisRequest,
-        pdf_uri: str,
-        report_payload: Dict[str, Any],
-    ) -> None:
-        tool = self.toolset.get_tool("GMAIL_SEND_EMAIL")
-        subject = f"RAVEN Validation Report: {request.hypothesis_text[:60]}"
-        key_findings = report_payload.get("key_findings", [])
-        body_lines = [
-            "Hello,",
-            "",
-            "Please find the attached validation report generated by RAVEN.",
-        ]
-        if key_findings:
-            body_lines.append("")
-            body_lines.append("Key Findings:")
-            for finding in key_findings[:5]:
-                body_lines.append(f"- {finding}")
-        body_lines.append("")
-        body_lines.append("Regards,")
-        body_lines.append("RAVEN Validation Platform")
-
-        attachment_path = pdf_uri.replace("file://", "")
-        tool.invoke(
-            {
-                "to": recipient,
-                "subject": subject,
-                "body": "\n".join(body_lines),
-                "attachments": [attachment_path],
-            }
-        )
 
     # ------------------------------------------------------------------
     # Utility helpers

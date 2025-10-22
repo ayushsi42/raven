@@ -30,7 +30,7 @@ def _make_validation_summary() -> ValidationSummary:
         WorkflowMilestone(name="detailed_analysis", status=MilestoneStatus.COMPLETED, detail="Narrative synthesized."),
         WorkflowMilestone(name="report_generation", status=MilestoneStatus.COMPLETED, detail="Report compiled."),
         WorkflowMilestone(name="human_review", status=MilestoneStatus.COMPLETED, detail="Review skipped."),
-        WorkflowMilestone(name="delivery", status=MilestoneStatus.COMPLETED, detail="Delivered to stakeholders."),
+    WorkflowMilestone(name="delivery", status=MilestoneStatus.COMPLETED, detail="Report available for download."),
     ]
     return ValidationSummary(
         score=0.61,
@@ -43,6 +43,9 @@ def _make_validation_summary() -> ValidationSummary:
 
 
 class _StubWorkflowClient:
+    def __init__(self) -> None:
+        self.deliveries: list[tuple[str, str, str]] = []
+
     async def submit(self, hypothesis_id, hypothesis):
         return WorkflowSubmissionResult(
             workflow_id=f"wf-{hypothesis_id}",
@@ -61,6 +64,9 @@ class _StubWorkflowClient:
         return _make_validation_summary()
 
     async def fetch_summary(self, workflow_id: str, workflow_run_id: str):
+        return _make_validation_summary()
+
+    async def cancel(self, workflow_id: str, workflow_run_id: str):
         return _make_validation_summary()
 
 
@@ -133,3 +139,4 @@ async def test_service_resume_updates_status() -> None:
     assert resume_response.status == "completed"
     stored = await service.get(submission.hypothesis_id)
     assert stored.status == "completed"
+
