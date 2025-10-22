@@ -40,7 +40,7 @@ class AppSettings(BaseSettings):
     firebase_web_measurement_id: str | None = None
     use_firestore: bool = True
 
-    model_config = SettingsConfigDict(env_prefix="RAVEN_", case_sensitive=False)
+    model_config = SettingsConfigDict(env_prefix="RAVEN_", case_sensitive=False, env_file=".env")
 
 
 @lru_cache
