@@ -66,7 +66,7 @@ class LocalWorkflowRun:
 
 @dataclass(slots=True)
 class HypothesisWorkflowClient:
-    """Execute the LangGraph pipeline without relying on Temporal."""
+    """Execute the LangGraph pipeline for hypothesis validation."""
 
     namespace: str
     task_queue: str

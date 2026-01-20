@@ -7,7 +7,6 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from hypothesis_agent.auth import require_authenticated_user
 from hypothesis_agent.models.hypothesis import (
     HypothesisRequest,
     HypothesisResponse,
@@ -17,7 +16,7 @@ from hypothesis_agent.models.hypothesis import (
 )
 from hypothesis_agent.services.hypothesis_service import HypothesisService
 
-api_router = APIRouter(dependencies=[Depends(require_authenticated_user)])
+api_router = APIRouter()
 
 
 def get_hypothesis_service(request: Request) -> HypothesisService:

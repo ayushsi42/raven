@@ -1,1609 +1,1350 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>RAVEN Hypothesis Studio</title>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RAVEN Hypothesis Studio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
-    <style>
-      :root {
-        color-scheme: dark;
-        --bg: #000000;
-        --surface: rgba(18, 18, 18, 0.6);
-        --surface-strong: rgba(12, 12, 12, 0.8);
-        --border: rgba(255, 255, 255, 0.06);
-        --border-focus: rgba(255, 255, 255, 0.12);
-        --text-primary: #ffffff;
-        --text-muted: rgba(255, 255, 255, 0.5);
-        --text-subtle: rgba(255, 255, 255, 0.3);
-  --accent: #ffffff;
-  --accent-soft: rgba(255, 255, 255, 0.08);
-  --accent-hover: rgba(255, 255, 255, 0.12);
-  --accent-primary: #3b82f6;
-  --accent-secondary: #10b981;
-  --progress-track: rgba(255, 255, 255, 0.08);
-  --progress-fill: linear-gradient(90deg, rgba(59, 130, 246, 0.85), rgba(16, 185, 129, 0.85));
-        font-family: "Inter", system-ui, -apple-system, sans-serif;
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
-      }
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap"
+    rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #000000;
+      --surface: rgba(18, 18, 18, 0.6);
+      --surface-strong: rgba(12, 12, 12, 0.8);
+      --border: rgba(255, 255, 255, 0.06);
+      --border-focus: rgba(255, 255, 255, 0.12);
+      --text-primary: #ffffff;
+      --text-muted: rgba(255, 255, 255, 0.5);
+      --text-subtle: rgba(255, 255, 255, 0.3);
+      --accent: #ffffff;
+      --accent-soft: rgba(255, 255, 255, 0.08);
+      --accent-hover: rgba(255, 255, 255, 0.12);
+      --accent-primary: #3b82f6;
+      --accent-secondary: #10b981;
+      --progress-track: rgba(255, 255, 255, 0.08);
+      --progress-fill: linear-gradient(90deg, rgba(59, 130, 246, 0.85), rgba(16, 185, 129, 0.85));
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
 
-      * {
-        box-sizing: border-box;
-      }
+    * {
+      box-sizing: border-box;
+    }
 
-      body {
-        margin: 0;
-        min-height: 100vh;
-        background: var(--bg);
-        color: var(--text-primary);
-        padding: clamp(2.5rem, 4vw, 3rem);
-        font-size: 14px;
-        line-height: 1.5;
-      }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text-primary);
+      padding: clamp(2.5rem, 4vw, 3rem);
+      font-size: 14px;
+      line-height: 1.5;
+    }
 
-      .canvas {
-        max-width: 1600px;
-        margin: 0 auto;
-        display: grid;
-        gap: clamp(2rem, 3vw, 3rem);
-        padding: clamp(2rem, 4vw, 3rem);
-        border-radius: 18px;
-        background: var(--surface);
-        box-shadow: 0 28px 80px rgba(0, 0, 0, 0.35);
-      }
+    .canvas {
+      max-width: 1600px;
+      margin: 0 auto;
+      display: grid;
+      gap: clamp(2rem, 3vw, 3rem);
+      padding: clamp(2rem, 4vw, 3rem);
+      border-radius: 18px;
+      background: var(--surface);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.35);
+    }
 
-      header {
-        display: grid;
-        gap: 1rem;
-        padding-bottom: 1.25rem;
-        border-bottom: 1px solid var(--border);
-        max-width: 920px;
-      }
+    header {
+      display: grid;
+      gap: 1rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border);
+      max-width: 920px;
+    }
 
-      header h1 {
-        margin: 0;
-        font-family: "Space Grotesk", "Inter", system-ui, -apple-system, sans-serif;
-        font-size: clamp(2.75rem, 6vw, 3.75rem);
-        font-weight: 600;
-        letter-spacing: -0.045em;
-      }
+    header h1 {
+      margin: 0;
+      font-family: "Space Grotesk", "Inter", system-ui, -apple-system, sans-serif;
+      font-size: clamp(2.75rem, 6vw, 3.75rem);
+      font-weight: 600;
+      letter-spacing: -0.045em;
+    }
 
-      header p {
-        margin: 0;
-        max-width: 54ch;
-        color: var(--text-muted);
-        font-weight: 400;
-        line-height: 1.55;
-        font-size: clamp(1rem, 1.9vw, 1.1rem);
-      }
+    header p {
+      margin: 0;
+      max-width: 54ch;
+      color: var(--text-muted);
+      font-weight: 400;
+      line-height: 1.55;
+      font-size: clamp(1rem, 1.9vw, 1.1rem);
+    }
 
+    .content {
+      display: grid;
+      gap: 2rem;
+      grid-template-columns: 1fr;
+      align-items: start;
+    }
+
+    @media (min-width: 1000px) {
       .content {
-        display: grid;
-        gap: 2rem;
-        grid-template-columns: 1fr;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 3rem;
         align-items: start;
       }
-
-      @media (min-width: 1000px) {
-        .content {
-          grid-template-columns: 1.2fr 1fr;
-          gap: 3rem;
-          align-items: start;
-        }
-      }
-
-      form {
-        display: grid;
-        gap: 1.5rem;
-      }
-
-      label {
-        display: block;
-      }
-
-      label span {
-        display: block;
-        margin-bottom: 0.5rem;
-        font-weight: 500;
-        color: var(--text-muted);
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }
-
-      input[type="text"],
-      input[type="date"],
-      textarea,
-      select {
-        width: 100%;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        background: transparent;
-        color: var(--text-primary);
-        padding: 0.75rem 1rem;
-        font-size: 14px;
-        font-family: inherit;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      }
-
-      textarea {
-        min-height: 120px;
-        resize: vertical;
-        line-height: 1.6;
-      }
-
-      .hidden {
-        display: none !important;
-      }
-
-      input:focus,
-      textarea:focus,
-      select:focus {
-        outline: none;
-        border-color: var(--border-focus);
-        background: rgba(255, 255, 255, 0.02);
-      }
-
-      input::placeholder,
-      textarea::placeholder {
-        color: var(--text-subtle);
-      }
-
-      .form-row {
-        display: grid;
-        gap: 1.5rem;
-      }
-
-      .form-row.wrap {
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      }
-
-      .button-destructive:hover:not(:disabled) {
-        border-color: rgba(248, 113, 113, 0.5);
-        background: rgba(248, 113, 113, 0.18);
-      }
-
-      .status-panel {
-        display: grid;
-        gap: 2rem;
-        align-content: start;
-      }
-
-      .status-panel h2 {
-        margin: 0;
-        font-weight: 500;
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--text-muted);
-        padding-bottom: 1rem;
-        border-bottom: 1px solid var(--border);
-      }
-
-      .status-grid {
-        display: grid;
-        gap: 1.5rem;
-        font-size: 13px;
-      }
-
-      .status-grid > div {
-        display: grid;
-        gap: 0.375rem;
-      }
-
-      .status-grid strong {
-        font-size: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--text-subtle);
-        font-weight: 500;
-      }
-
-      .status-grid span {
-        color: var(--text-primary);
-        font-weight: 300;
-      }
-
-      .milestone-header {
-        font-size: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--text-subtle);
-        font-weight: 500;
-      }
-
-      .progress {
-        display: grid;
-        gap: 0.75rem;
-        padding: 1.25rem 1.5rem;
-        border-radius: 12px;
-        border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.02);
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.01);
-        transition: border-color 0.3s ease, background 0.3s ease;
-      }
-
-      .progress-label {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        text-transform: uppercase;
-        font-size: 10px;
-        letter-spacing: 0.12em;
-        color: var(--text-muted);
-        font-weight: 500;
-      }
-
-      .progress-track {
-        height: 6px;
-        border-radius: 999px;
-        background: var(--progress-track);
-        overflow: hidden;
-        position: relative;
-      }
-
-      .progress-indicator {
-        position: absolute;
-        inset: 0;
-        width: 0%;
-        border-radius: inherit;
-        background: var(--progress-fill);
-        transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 8px 18px rgba(59, 130, 246, 0.25);
-      }
-
-      .progress-summary {
-        font-size: 12px;
-        color: var(--text-muted);
-        letter-spacing: 0.02em;
-        line-height: 1.6;
-      }
-
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0.5rem 1rem;
-        border-radius: 4px;
-        background: var(--accent-soft);
-        border: 1px solid var(--border);
-        color: var(--text-primary);
-        font-size: 11px;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        font-weight: 500;
-        width: fit-content;
-      }
-
-      .insight-panel {
-        display: grid;
-        gap: 1.75rem;
-        margin-top: 1rem;
-        padding: 1.75rem 2rem;
-        border-radius: 14px;
-        border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.04);
-      }
-
-      .metric-grid {
-        display: grid;
-        gap: 1rem;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      }
-
-      .metric-card {
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 1rem 1.25rem;
-        background: rgba(0, 0, 0, 0.2);
-        display: grid;
-        gap: 0.4rem;
-      }
-
-      .metric-label {
-        font-size: 10px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--text-subtle);
-        font-weight: 500;
-      }
-
-      .metric-value {
-        font-size: 1.75rem;
-        font-weight: 400;
-        letter-spacing: -0.01em;
-      }
-
-      .metric-subtext {
-        font-size: 12px;
-        color: var(--text-muted);
-      }
-
-      .panel {
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 1.25rem 1.5rem;
-        background: rgba(0, 0, 0, 0.16);
-        display: grid;
-        gap: 1rem;
-      }
-
-      .panel-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-
-      .panel-header h3 {
-        margin: 0;
-        font-size: 0.95rem;
-        font-weight: 500;
-        letter-spacing: 0.01em;
-      }
-
-      .meta-grid {
-        display: grid;
-        gap: 1rem;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      }
-
-      .meta-item {
-        display: grid;
-        gap: 0.3rem;
-      }
-
-      .meta-label {
-        font-size: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--text-subtle);
-        font-weight: 500;
-      }
-
-      .meta-value {
-        font-size: 13px;
-        color: var(--text-primary);
-        word-break: break-word;
-      }
-
-      .meta-actions {
-        display: flex;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-      }
-
-      .tag {
-        border-radius: 999px;
-        border: 1px solid var(--border);
-        padding: 0.25rem 0.75rem;
-        font-size: 11px;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        color: var(--text-muted);
-        background: rgba(255, 255, 255, 0.05);
-      }
-
-      .timeline-list {
-        display: grid;
-        gap: 0.75rem;
-      }
-
-      .timeline-item {
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 0.9rem 1rem;
-        background: rgba(255, 255, 255, 0.02);
-        display: grid;
-        gap: 0.45rem;
-      }
-
-      .timeline-title {
-        font-size: 0.95rem;
-        font-weight: 500;
-        letter-spacing: 0.01em;
-      }
-
-      .timeline-detail {
-        font-size: 12px;
-        color: var(--text-muted);
-        line-height: 1.6;
-      }
-
-      .timeline-item[data-status="completed"] {
-        border-color: rgba(34, 197, 94, 0.35);
-        background: rgba(34, 197, 94, 0.08);
-      }
-
-      .timeline-item[data-status="running"] {
-        border-color: rgba(59, 130, 246, 0.35);
-        background: rgba(59, 130, 246, 0.08);
-      }
-
-      .timeline-item[data-status="waiting_review"] {
-        border-color: rgba(251, 191, 36, 0.35);
-        background: rgba(251, 191, 36, 0.08);
-      }
-
-      .timeline-item[data-status="cancelled"] {
-        border-color: rgba(248, 113, 113, 0.35);
-        background: rgba(248, 113, 113, 0.08);
-      }
-
-      .evidence-list {
-        display: grid;
-        gap: 0.85rem;
-      }
-
-      .evidence-item {
-        border-radius: 10px;
-        border: 1px solid var(--border);
-        padding: 0.85rem 1rem;
-        background: rgba(255, 255, 255, 0.02);
-        display: grid;
-        gap: 0.35rem;
-      }
-
-      .evidence-type {
-        font-size: 0.9rem;
-        font-weight: 500;
-        letter-spacing: 0.01em;
-      }
-
-      .evidence-uri {
-        font-size: 12px;
-        color: var(--text-muted);
-        word-break: break-all;
-      }
-
-      .evidence-actions {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-      }
-
-      .empty-state {
-        color: var(--text-subtle);
-        font-size: 12px;
-      }
-
-      details.report-summary {
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.02);
-        padding: 1rem 1.25rem;
-        color: var(--text-primary);
-      }
-
-      details.report-summary > summary {
-        cursor: pointer;
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-weight: 500;
-        color: var(--text-muted);
-        list-style: none;
-        position: relative;
-      }
-
-      details.report-summary[open] > summary {
-        color: var(--text-primary);
-      }
-
-      details.report-summary > summary::marker,
-      details.report-summary > summary::-webkit-details-marker {
-        display: none;
-      }
-
-      details.report-summary > summary::after {
-        content: "▾";
-        position: absolute;
-        right: 0;
-        top: 0;
-        font-size: 12px;
-        transition: transform 0.2s ease;
-      }
-
-      details.report-summary[open] > summary::after {
-        transform: rotate(180deg);
-      }
-
-      details.report-summary pre {
-        margin: 0;
-        margin-top: 1rem;
-        padding: 1.25rem;
-        border-radius: 6px;
-        background: var(--surface-strong);
-        border: 1px solid var(--border);
-        font-size: 12px;
-        line-height: 1.7;
-        overflow-x: auto;
-        font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
-        color: var(--text-muted);
-        font-weight: 300;
-      }
-
-      /* Scrollbar styling */
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-
-      ::-webkit-scrollbar-track {
-        background: transparent;
-      }
-
-      ::-webkit-scrollbar-thumb {
-        background: var(--border);
-        border-radius: 4px;
-      }
-
-      ::-webkit-scrollbar-thumb:hover {
-        background: var(--border-focus);
-      }
-
-      /* Select styling */
-      select {
-        appearance: none;
-        background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='rgba(255,255,255,0.3)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 1rem center;
-        padding-right: 2.5rem;
-      }
-
-      .auth-overlay {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        backdrop-filter: blur(18px);
-        background: rgba(0, 0, 0, 0.7);
-        z-index: 1000;
-        padding: 2rem;
-      }
-
-      .auth-overlay.hidden {
-        display: none;
-      }
-
-      .auth-card {
-        width: min(420px, 100%);
-        padding: 2.5rem;
-        border-radius: 18px;
-        border: 1px solid var(--border);
-        background: rgba(18, 18, 18, 0.9);
-        display: grid;
-        gap: 1.25rem;
-        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
-      }
-
-      .auth-card h2 {
-        margin: 0;
-        font-size: 1.4rem;
-        font-weight: 500;
-      }
-
-      .auth-card p {
-        margin: 0;
-        color: var(--text-muted);
-        font-size: 0.95rem;
-      }
-
-      .auth-actions {
-        display: flex;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-      }
-
-      .auth-card form {
-        display: grid;
-        gap: 1rem;
-      }
-
-      .auth-card label span {
-        font-size: 0.7rem;
-      }
-
-      .auth-error {
-        color: rgba(248, 113, 113, 0.9);
-        font-size: 0.85rem;
-      }
-
-      .auth-error.hidden {
-        display: none;
-      }
-
-      .google-button {
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        background: rgba(255, 255, 255, 0.04);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-      }
-
-      .google-button::before {
-        content: "";
-        width: 18px;
-        height: 18px;
-        background-image: url("https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg");
-        background-size: contain;
-        background-repeat: no-repeat;
-      }
-
-      .auth-status {
-        display: flex;
-        gap: 0.75rem;
-        align-items: center;
-        flex-wrap: wrap;
-        margin-top: 0.75rem;
-      }
-
-      .pill.small {
-        font-size: 11px;
-        padding: 0.35rem 0.75rem;
-      }
-
-      .text-button {
-        border: none;
-        background: transparent;
-        color: var(--text-muted);
-        font-size: 0.85rem;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        cursor: pointer;
-        padding: 0;
-      }
-
-      .text-button:hover {
-        color: var(--text-primary);
-      }
-
-      .text-button.hidden {
-        display: none;
-      }
-    </style>
-    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-auth-compat.js"></script>
-  </head>
-  <body data-api-base="{{ api_prefix }}" data-require-auth="{{ 'true' if require_authentication else 'false' }}">
-    <div id="auth-gate" class="auth-overlay hidden">
-      <div class="auth-card">
-        <h2>Sign in to continue</h2>
-        <p>Use your Firebase account to submit and review hypotheses.</p>
-        <form id="email-auth-form">
-          <label>
-            <span>Email</span>
-            <input type="email" id="auth-email" autocomplete="email" required />
+    }
+
+    form {
+      display: grid;
+      gap: 1.5rem;
+    }
+
+    label {
+      display: block;
+    }
+
+    label span {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    input[type="text"],
+    input[type="date"],
+    textarea,
+    select {
+      width: 100%;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-primary);
+      padding: 0.75rem 1rem;
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+      line-height: 1.6;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--border-focus);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+      color: var(--text-subtle);
+    }
+
+    .form-row {
+      display: grid;
+      gap: 1.5rem;
+    }
+
+    .form-row.wrap {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .button-destructive:hover:not(:disabled) {
+      border-color: rgba(248, 113, 113, 0.5);
+      background: rgba(248, 113, 113, 0.18);
+    }
+
+    .status-panel {
+      display: grid;
+      gap: 2rem;
+      align-content: start;
+    }
+
+    .status-panel h2 {
+      margin: 0;
+      font-weight: 500;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .status-grid {
+      display: grid;
+      gap: 1.5rem;
+      font-size: 13px;
+    }
+
+    .status-grid>div {
+      display: grid;
+      gap: 0.375rem;
+    }
+
+    .status-grid strong {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-subtle);
+      font-weight: 500;
+    }
+
+    .status-grid span {
+      color: var(--text-primary);
+      font-weight: 300;
+    }
+
+    .milestone-header {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-subtle);
+      font-weight: 500;
+    }
+
+    .progress {
+      display: grid;
+      gap: 0.75rem;
+      padding: 1.25rem 1.5rem;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.01);
+      transition: border-color 0.3s ease, background 0.3s ease;
+    }
+
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .progress-track {
+      height: 6px;
+      border-radius: 999px;
+      background: var(--progress-track);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-indicator {
+      position: absolute;
+      inset: 0;
+      width: 0%;
+      border-radius: inherit;
+      background: var(--progress-fill);
+      transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 8px 18px rgba(59, 130, 246, 0.25);
+    }
+
+    .progress-summary {
+      font-size: 12px;
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+      line-height: 1.6;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      background: var(--accent-soft);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      font-weight: 500;
+      width: fit-content;
+    }
+
+    .insight-panel {
+      display: grid;
+      gap: 1.75rem;
+      margin-top: 1rem;
+      padding: 1.75rem 2rem;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .metric-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+
+    .metric-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      background: rgba(0, 0, 0, 0.2);
+      display: grid;
+      gap: 0.4rem;
+    }
+
+    .metric-label {
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-subtle);
+      font-weight: 500;
+    }
+
+    .metric-value {
+      font-size: 1.75rem;
+      font-weight: 400;
+      letter-spacing: -0.01em;
+    }
+
+    .metric-subtext {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      background: rgba(0, 0, 0, 0.16);
+      display: grid;
+      gap: 1rem;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-header h3 {
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+    }
+
+    .meta-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .meta-item {
+      display: grid;
+      gap: 0.3rem;
+    }
+
+    .meta-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-subtle);
+      font-weight: 500;
+    }
+
+    .meta-value {
+      font-size: 13px;
+      color: var(--text-primary);
+      word-break: break-word;
+    }
+
+    .meta-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .tag {
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      padding: 0.25rem 0.75rem;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .timeline-list {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .timeline-item {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.9rem 1rem;
+      background: rgba(255, 255, 255, 0.02);
+      display: grid;
+      gap: 0.45rem;
+    }
+
+    .timeline-title {
+      font-size: 0.95rem;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+    }
+
+    .timeline-detail {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .timeline-item[data-status="completed"] {
+      border-color: rgba(34, 197, 94, 0.35);
+      background: rgba(34, 197, 94, 0.08);
+    }
+
+    .timeline-item[data-status="running"] {
+      border-color: rgba(59, 130, 246, 0.35);
+      background: rgba(59, 130, 246, 0.08);
+    }
+
+    .timeline-item[data-status="waiting_review"] {
+      border-color: rgba(251, 191, 36, 0.35);
+      background: rgba(251, 191, 36, 0.08);
+    }
+
+    .timeline-item[data-status="cancelled"] {
+      border-color: rgba(248, 113, 113, 0.35);
+      background: rgba(248, 113, 113, 0.08);
+    }
+
+    .evidence-list {
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .evidence-item {
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      padding: 0.85rem 1rem;
+      background: rgba(255, 255, 255, 0.02);
+      display: grid;
+      gap: 0.35rem;
+    }
+
+    .evidence-type {
+      font-size: 0.9rem;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+    }
+
+    .evidence-uri {
+      font-size: 12px;
+      color: var(--text-muted);
+      word-break: break-all;
+    }
+
+    .evidence-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .empty-state {
+      color: var(--text-subtle);
+      font-size: 12px;
+    }
+
+    details.report-summary {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.02);
+      padding: 1rem 1.25rem;
+      color: var(--text-primary);
+    }
+
+    details.report-summary>summary {
+      cursor: pointer;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 500;
+      color: var(--text-muted);
+      list-style: none;
+      position: relative;
+    }
+
+    details.report-summary[open]>summary {
+      color: var(--text-primary);
+    }
+
+    details.report-summary>summary::marker,
+    details.report-summary>summary::-webkit-details-marker {
+      display: none;
+    }
+
+    details.report-summary>summary::after {
+      content: "▾";
+      position: absolute;
+      right: 0;
+      top: 0;
+      font-size: 12px;
+      transition: transform 0.2s ease;
+    }
+
+    details.report-summary[open]>summary::after {
+      transform: rotate(180deg);
+    }
+
+    details.report-summary pre {
+      margin: 0;
+      margin-top: 1rem;
+      padding: 1.25rem;
+      border-radius: 6px;
+      background: var(--surface-strong);
+      border: 1px solid var(--border);
+      font-size: 12px;
+      line-height: 1.7;
+      overflow-x: auto;
+      font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+      color: var(--text-muted);
+      font-weight: 300;
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--border-focus);
+    }
+
+    /* Select styling */
+    select {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='rgba(255,255,255,0.3)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 1rem center;
+      padding-right: 2.5rem;
+    }
+
+    .auth-overlay {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      backdrop-filter: blur(18px);
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 1000;
+      padding: 2rem;
+    }
+
+    .auth-overlay.hidden {
+      display: none;
+    }
+
+    .auth-card {
+      width: min(420px, 100%);
+      padding: 2.5rem;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: rgba(18, 18, 18, 0.9);
+      display: grid;
+      gap: 1.25rem;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+    }
+
+    .auth-card h2 {
+      margin: 0;
+      font-size: 1.4rem;
+      font-weight: 500;
+    }
+
+    .auth-card p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .auth-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .auth-card form {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .auth-card label span {
+      font-size: 0.7rem;
+    }
+
+    .auth-error {
+      color: rgba(248, 113, 113, 0.9);
+      font-size: 0.85rem;
+    }
+
+    .auth-error.hidden {
+      display: none;
+    }
+
+    .google-button {
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.04);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .google-button::before {
+      content: "";
+      width: 18px;
+      height: 18px;
+      background-image: url("https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg");
+      background-size: contain;
+      background-repeat: no-repeat;
+    }
+
+    .auth-status {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 0.75rem;
+    }
+
+    .pill.small {
+      font-size: 11px;
+      padding: 0.35rem 0.75rem;
+    }
+
+    .text-button {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .text-button:hover {
+      color: var(--text-primary);
+    }
+
+    .text-button.hidden {
+      display: none;
+    }
+  </style>
+
+</head>
+
+<body data-api-base="{{ api_prefix }}">
+
+  <div class="canvas">
+    <header>
+      <h1>RAVEN</h1>
+      <p>
+        A minimalist studio for hypothesis validation: outline your thesis, let LangGraph and Yahoo Finance pull
+        the evidence, then download the audit-ready briefing in minutes.
+      </p>
+
+    </header>
+    <div class="content">
+      <form id="hypothesis-form">
+        <label>
+          <span>Hypothesis</span>
+          <textarea name="hypothesis_text" placeholder="e.g. Company X expands EBITDA margin by 200bps next year"
+            required></textarea>
+        </label>
+        <div class="form-row wrap">
+          <label class="form-field">
+            <span>Entities</span>
+            <input type="text" name="entities" placeholder="Ticker or company name" />
           </label>
-          <label>
-            <span>Password</span>
-            <input type="password" id="auth-password" autocomplete="current-password" required />
+          <label class="form-field">
+            <span>Author</span>
+            <input type="text" name="user_id" placeholder="Your name" required />
           </label>
-          <div class="auth-actions">
-            <button type="submit" id="auth-signin">Sign In</button>
-            <button type="button" id="auth-register">Create Account</button>
-          </div>
-        </form>
-        <button type="button" id="google-signin" class="google-button">Continue with Google</button>
-        <p class="auth-error hidden" id="auth-error"></p>
-      </div>
-    </div>
-    <script id="firebase-config-data" type="application/json">{{ firebase_config | tojson }}</script>
-    <div class="canvas">
-      <header>
-        <h1>RAVEN</h1>
-        <p>
-          A minimalist studio for hypothesis validation: outline your thesis, let LangGraph and Composio pull
-          the evidence, then download the audit-ready briefing in minutes.
-        </p>
-        <div class="auth-status">
-          <span class="pill small" id="auth-user-chip">Guest</span>
-          <button type="button" id="sign-out-button" class="text-button hidden">Sign out</button>
         </div>
-      </header>
-      <div class="content">
-        <form id="hypothesis-form">
-          <label>
-            <span>Hypothesis</span>
-            <textarea
-              name="hypothesis_text"
-              placeholder="e.g. Company X expands EBITDA margin by 200bps next year"
-              required
-            ></textarea>
+        <div class="form-row wrap">
+          <label class="form-field">
+            <span>Start Date</span>
+            <input type="date" name="start" required />
           </label>
-          <div class="form-row wrap">
-            <label class="form-field">
-              <span>Entities</span>
-              <input type="text" name="entities" placeholder="Ticker or company name" />
-            </label>
-            <label class="form-field">
-              <span>User ID</span>
-              <input type="text" name="user_id" placeholder="Your identifier" required />
-            </label>
-            <label class="form-field">
-              <span>API Key (optional)</span>
-              <input type="password" name="api_key" placeholder="x-api-key header" autocomplete="off" />
-            </label>
-          </div>
-          <div class="form-row wrap">
-            <label class="form-field">
-              <span>Start Date</span>
-              <input type="date" name="start" required />
-            </label>
-            <label class="form-field">
-              <span>End Date</span>
-              <input type="date" name="end" required />
-            </label>
-            <label class="form-field">
-              <span>Risk Appetite</span>
-              <select name="risk_appetite">
-                <option value="moderate" selected>Moderate</option>
-                <option value="low">Low</option>
-                <option value="high">High</option>
-              </select>
-            </label>
-          </div>
-          <label>
-            <span>Require Human Review?</span>
-            <select name="requires_human_review">
-              <option value="false" selected>No</option>
-              <option value="true">Yes</option>
+          <label class="form-field">
+            <span>End Date</span>
+            <input type="date" name="end" required />
+          </label>
+          <label class="form-field">
+            <span>Risk Appetite</span>
+            <select name="risk_appetite">
+              <option value="moderate" selected>Moderate</option>
+              <option value="low">Low</option>
+              <option value="high">High</option>
             </select>
           </label>
-          <button type="submit">Validate Hypothesis</button>
-        </form>
-        <aside class="status-panel">
-          <div class="pill" id="status-pill">Awaiting submission</div>
-          <div class="progress" id="progress-panel">
-            <div class="progress-label">
-              <span>Workflow Progress</span>
-              <span id="progress-percentage">0%</span>
-            </div>
-            <div class="progress-track">
-              <div class="progress-indicator" id="progress-indicator"></div>
-            </div>
-            <div class="progress-summary" id="progress-summary">No milestones yet.</div>
+        </div>
+        <label>
+          <span>Require Human Review?</span>
+          <select name="requires_human_review">
+            <option value="false" selected>No</option>
+            <option value="true">Yes</option>
+          </select>
+        </label>
+        <button type="submit">Validate Hypothesis</button>
+      </form>
+      <aside class="status-panel">
+        <div class="pill" id="status-pill">Awaiting submission</div>
+        <div class="progress" id="progress-panel">
+          <div class="progress-label">
+            <span>Workflow Progress</span>
+            <span id="progress-percentage">0%</span>
           </div>
-          <button type="button" id="stop-button" class="button-destructive" disabled>Stop Workflow</button>
-          <div id="resume-controls" class="hidden">
-            <div class="milestone-header">Human Review</div>
-            <div class="form-row wrap">
-              <label class="form-field">
-                <span>Decision</span>
-                <select id="resume-decision">
-                  <option value="approved" selected>Approve</option>
-                  <option value="rejected">Reject</option>
-                  <option value="needs_changes">Needs Changes</option>
-                </select>
-              </label>
-              <button type="button" id="resume-button">Submit Decision</button>
-            </div>
+          <div class="progress-track">
+            <div class="progress-indicator" id="progress-indicator"></div>
           </div>
-        </aside>
-      </div>
-      <section class="insight-panel hidden" id="insight-panel">
-        <div class="metric-grid">
-          <div class="metric-card">
-            <div class="metric-label">Score</div>
-            <div class="metric-value" id="metric-score">&mdash;</div>
-            <div class="metric-subtext" id="metric-conclusion">Pending validation</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">Confidence</div>
-            <div class="metric-value" id="metric-confidence">&mdash;</div>
-            <div class="metric-subtext">Probability-weighted conviction</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">Current Stage</div>
-            <div class="metric-value" id="metric-stage">&mdash;</div>
-            <div class="metric-subtext">Workflow progression</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">Workflow Status</div>
-            <div class="metric-value" id="metric-workflow-status">&mdash;</div>
-            <div class="metric-subtext">Latest execution state</div>
+          <div class="progress-summary" id="progress-summary">No milestones yet.</div>
+        </div>
+        <button type="button" id="stop-button" class="button-destructive" disabled>Stop Workflow</button>
+        <div id="resume-controls" class="hidden">
+          <div class="milestone-header">Human Review</div>
+          <div class="form-row wrap">
+            <label class="form-field">
+              <span>Decision</span>
+              <select id="resume-decision">
+                <option value="approved" selected>Approve</option>
+                <option value="rejected">Reject</option>
+                <option value="needs_changes">Needs Changes</option>
+              </select>
+            </label>
+            <button type="button" id="resume-button">Submit Decision</button>
           </div>
         </div>
-        <div class="panel">
-          <div class="panel-header">
-            <h3>Workflow Metadata</h3>
-            <span class="tag" id="meta-status">Awaiting submission</span>
-          </div>
-          <div class="meta-grid">
-            <div class="meta-item">
-              <span class="meta-label">Hypothesis ID</span>
-              <span class="meta-value" id="meta-hypothesis-id">&mdash;</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Workflow ID</span>
-              <span class="meta-value" id="meta-workflow-id">&mdash;</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Run ID</span>
-              <span class="meta-value" id="meta-workflow-run-id">&mdash;</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Last Updated</span>
-              <span class="meta-value" id="meta-updated">&mdash;</span>
-            </div>
-          </div>
-          <div class="meta-actions hidden" id="report-download-wrapper">
-            <a id="report-download" class="pill" href="#" target="_blank" rel="noopener">Download Report</a>
-          </div>
-        </div>
-        <div class="panel">
-          <div class="panel-header">
-            <h3>Milestones</h3>
-          </div>
-          <div class="timeline-list empty-state" id="milestone-table">No milestones yet.</div>
-        </div>
-        <div class="panel">
-          <div class="panel-header">
-            <h3>Evidence</h3>
-          </div>
-          <div class="evidence-list empty-state" id="evidence-list">No evidence captured yet.</div>
-        </div>
-      </section>
-      <details class="report-summary hidden" id="summary-details">
-        <summary>Validation Summary</summary>
-        <pre id="summary-json">Submit a hypothesis to see the validation report.</pre>
-      </details>
+      </aside>
     </div>
-    <script>
-      const firebaseConfigElement = document.getElementById('firebase-config-data');
-      const firebaseConfig = firebaseConfigElement
-        ? JSON.parse(firebaseConfigElement.textContent || '{}')
-        : {};
-      const requireAuth = document.body.dataset.requireAuth === 'true';
+    <section class="insight-panel hidden" id="insight-panel">
+      <div class="metric-grid">
+        <div class="metric-card">
+          <div class="metric-label">Score</div>
+          <div class="metric-value" id="metric-score">&mdash;</div>
+          <div class="metric-subtext" id="metric-conclusion">Pending validation</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Confidence</div>
+          <div class="metric-value" id="metric-confidence">&mdash;</div>
+          <div class="metric-subtext">Probability-weighted conviction</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Current Stage</div>
+          <div class="metric-value" id="metric-stage">&mdash;</div>
+          <div class="metric-subtext">Workflow progression</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Workflow Status</div>
+          <div class="metric-value" id="metric-workflow-status">&mdash;</div>
+          <div class="metric-subtext">Latest execution state</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Workflow Metadata</h3>
+          <span class="tag" id="meta-status">Awaiting submission</span>
+        </div>
+        <div class="meta-grid">
+          <div class="meta-item">
+            <span class="meta-label">Hypothesis ID</span>
+            <span class="meta-value" id="meta-hypothesis-id">&mdash;</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Workflow ID</span>
+            <span class="meta-value" id="meta-workflow-id">&mdash;</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Run ID</span>
+            <span class="meta-value" id="meta-workflow-run-id">&mdash;</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Last Updated</span>
+            <span class="meta-value" id="meta-updated">&mdash;</span>
+          </div>
+        </div>
+        <div class="meta-actions hidden" id="report-download-wrapper">
+          <a id="report-download" class="pill" href="#" target="_blank" rel="noopener">Download Report</a>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Milestones</h3>
+        </div>
+        <div class="timeline-list empty-state" id="milestone-table">No milestones yet.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Evidence</h3>
+        </div>
+        <div class="evidence-list empty-state" id="evidence-list">No evidence captured yet.</div>
+      </div>
+    </section>
+    <details class="report-summary hidden" id="summary-details">
+      <summary>Validation Summary</summary>
+      <pre id="summary-json">Submit a hypothesis to see the validation report.</pre>
+    </details>
+  </div>
+  <script>
 
-      const form = document.getElementById('hypothesis-form');
-      const statusCard = {
-        pill: document.getElementById('status-pill'),
-        summary: document.getElementById('summary-json'),
-        resumeControls: document.getElementById('resume-controls'),
-        resumeDecision: document.getElementById('resume-decision'),
-        resumeButton: document.getElementById('resume-button'),
-        stopButton: document.getElementById('stop-button'),
-        progressIndicator: document.getElementById('progress-indicator'),
-  progressSummary: document.getElementById('progress-summary'),
-        progressPercent: document.getElementById('progress-percentage'),
-        progressPanel: document.getElementById('progress-panel'),
-        apiKeyInput: document.querySelector('input[name="api_key"]'),
-        summaryDetails: document.getElementById('summary-details'),
+
+    const form = document.getElementById('hypothesis-form');
+    const statusCard = {
+      pill: document.getElementById('status-pill'),
+      summary: document.getElementById('summary-json'),
+      resumeControls: document.getElementById('resume-controls'),
+      resumeDecision: document.getElementById('resume-decision'),
+      resumeButton: document.getElementById('resume-button'),
+      stopButton: document.getElementById('stop-button'),
+      progressIndicator: document.getElementById('progress-indicator'),
+      progressSummary: document.getElementById('progress-summary'),
+      progressPercent: document.getElementById('progress-percentage'),
+      progressPanel: document.getElementById('progress-panel'),
+      summaryDetails: document.getElementById('summary-details'),
+    };
+
+    const dashboard = {
+      container: document.getElementById('insight-panel'),
+      metricScore: document.getElementById('metric-score'),
+      metricConfidence: document.getElementById('metric-confidence'),
+      metricConclusion: document.getElementById('metric-conclusion'),
+      metricStage: document.getElementById('metric-stage'),
+      metricWorkflowStatus: document.getElementById('metric-workflow-status'),
+      metaStatus: document.getElementById('meta-status'),
+      metaHypothesis: document.getElementById('meta-hypothesis-id'),
+      metaWorkflow: document.getElementById('meta-workflow-id'),
+      metaRun: document.getElementById('meta-workflow-run-id'),
+      metaUpdated: document.getElementById('meta-updated'),
+      evidenceList: document.getElementById('evidence-list'),
+      milestoneTable: document.getElementById('milestone-table'),
+      reportDownloadWrapper: document.getElementById('report-download-wrapper'),
+      reportDownload: document.getElementById('report-download'),
+    };
+
+    let currentHypothesisId = null;
+    const apiBase = document.body.dataset.apiBase;
+
+
+
+
+    let finalReportLoadedFor = null;
+    let lastStatusPayload = null;
+
+    const stageLabels = {
+      plan_generation: 'Plan Generation',
+      data_collection: 'Data Generation',
+      hybrid_analysis: 'Hybrid Analysis',
+      detailed_analysis: 'Detailed Analysis',
+      report_generation: 'Report Generation',
+      human_review: 'Human Review',
+      delivery: 'Delivery',
+    };
+
+    const baseStageOrder = [
+      'plan_generation',
+      'data_collection',
+      'hybrid_analysis',
+      'detailed_analysis',
+      'report_generation',
+      'delivery',
+    ];
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      finalReportLoadedFor = null;
+      lastStatusPayload = null;
+      statusCard.pill.textContent = 'Submitting…';
+      statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
+      statusCard.stopButton.disabled = true;
+      const formData = new FormData(form);
+      const entities = formData.get('entities')
+        ? formData.get('entities').split(',').map((item) => item.trim()).filter(Boolean)
+        : [];
+
+      const payload = {
+        user_id: formData.get('user_id'),
+        hypothesis_text: formData.get('hypothesis_text'),
+        entities,
+        time_horizon: {
+          start: formData.get('start'),
+          end: formData.get('end'),
+        },
+        risk_appetite: formData.get('risk_appetite'),
+        requires_human_review: formData.get('requires_human_review') === 'true',
       };
 
-      const dashboard = {
-        container: document.getElementById('insight-panel'),
-        metricScore: document.getElementById('metric-score'),
-        metricConfidence: document.getElementById('metric-confidence'),
-        metricConclusion: document.getElementById('metric-conclusion'),
-        metricStage: document.getElementById('metric-stage'),
-        metricWorkflowStatus: document.getElementById('metric-workflow-status'),
-        metaStatus: document.getElementById('meta-status'),
-        metaHypothesis: document.getElementById('meta-hypothesis-id'),
-        metaWorkflow: document.getElementById('meta-workflow-id'),
-        metaRun: document.getElementById('meta-workflow-run-id'),
-        metaUpdated: document.getElementById('meta-updated'),
-        evidenceList: document.getElementById('evidence-list'),
-        milestoneTable: document.getElementById('milestone-table'),
-        reportDownloadWrapper: document.getElementById('report-download-wrapper'),
-        reportDownload: document.getElementById('report-download'),
-      };
-
-      let currentHypothesisId = null;
-      const apiBase = document.body.dataset.apiBase;
-      const apiKeyStorageKey = 'raven-ui-api-key';
-      const storedKey = window.localStorage.getItem(apiKeyStorageKey);
-      if (storedKey && statusCard.apiKeyInput) {
-        statusCard.apiKeyInput.value = storedKey;
-      }
-
-      const authGate = document.getElementById('auth-gate');
-      const authForm = document.getElementById('email-auth-form');
-      const authEmail = document.getElementById('auth-email');
-      const authPassword = document.getElementById('auth-password');
-      const authError = document.getElementById('auth-error');
-      const authRegisterButton = document.getElementById('auth-register');
-      const googleSignInButton = document.getElementById('google-signin');
-      const signOutButton = document.getElementById('sign-out-button');
-      const authUserChip = document.getElementById('auth-user-chip');
-
-      let firebaseApp = null;
-      let firebaseAuth = null;
-
-      if (requireAuth && authGate) {
-        authGate.classList.remove('hidden');
-      }
-
-      initialiseFirebase();
-
-      if (!requireAuth) {
-        updateAuthChip(null);
-      }
-
-      function initialiseFirebase() {
-        const hasConfig = firebaseConfig && Object.keys(firebaseConfig).length > 0;
-        if (typeof firebase === 'undefined' || !hasConfig) {
-          if (requireAuth) {
-            showAuthError(
-              hasConfig
-                ? 'Firebase SDK failed to load. Please refresh or contact support.'
-                : 'Authentication is required but Firebase web configuration is missing.'
-            );
-            setInteractivity(false);
-            if (authGate) authGate.classList.remove('hidden');
-          }
-          return;
-        }
-
-        try {
-          firebaseApp = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(firebaseConfig);
-          firebaseAuth = firebase.auth();
-          firebaseAuth.onAuthStateChanged(handleAuthStateChanged);
-        } catch (error) {
-          console.error('Failed to initialise Firebase', error);
-          firebaseAuth = null;
-          if (requireAuth) {
-            showAuthError('Authentication is unavailable. Verify Firebase settings.');
-            setInteractivity(false);
-            if (authGate) authGate.classList.remove('hidden');
-          }
-        }
-      }
-
-      function handleAuthStateChanged(user) {
-        clearAuthError();
-        updateAuthChip(user);
-        if (requireAuth) {
-          setInteractivity(Boolean(user));
-          if (authGate) {
-            authGate.classList.toggle('hidden', Boolean(user));
-          }
-        }
-      }
-
-      function updateAuthChip(user) {
-        const label = user && (user.displayName || user.email || user.uid);
-        if (authUserChip) {
-          authUserChip.textContent = label || 'Guest';
-        }
-        if (signOutButton) {
-          signOutButton.classList.toggle('hidden', !user);
-        }
-      }
-
-      function showAuthError(message) {
-        if (!authError) return;
-        authError.textContent = message;
-        authError.classList.remove('hidden');
-      }
-
-      function clearAuthError() {
-        if (!authError) return;
-        authError.textContent = '';
-        authError.classList.add('hidden');
-      }
-
-      function setInteractivity(enabled) {
-        if (!form) return;
-        const controls = form.querySelectorAll('input, textarea, select, button');
-        controls.forEach((control) => {
-          if (control === statusCard.stopButton || control === statusCard.resumeButton) {
-            return;
-          }
-          if (enabled) {
-            const previouslyDisabled = control.dataset.disabledBeforeAuth === 'true';
-            control.disabled = previouslyDisabled;
-            delete control.dataset.disabledBeforeAuth;
-          } else {
-            control.dataset.disabledBeforeAuth = control.disabled ? 'true' : 'false';
-            control.disabled = true;
-          }
+      try {
+        const headers = await buildHeaders();
+        const response = await fetch(`${apiBase}/hypotheses`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
         });
-        if (statusCard.stopButton) {
-          if (enabled) {
-            const prev = statusCard.stopButton.dataset.disabledBeforeAuth === 'true';
-            statusCard.stopButton.disabled = prev;
-            delete statusCard.stopButton.dataset.disabledBeforeAuth;
-          } else {
-            statusCard.stopButton.dataset.disabledBeforeAuth = statusCard.stopButton.disabled ? 'true' : 'false';
-            statusCard.stopButton.disabled = true;
-          }
+
+        if (!response.ok) {
+          const detail = await safeReadDetail(response);
+          throw new Error(`Submission failed: ${response.status} ${detail}`);
         }
-        if (statusCard.resumeButton) {
-          if (enabled) {
-            const prev = statusCard.resumeButton.dataset.disabledBeforeAuth === 'true';
-            statusCard.resumeButton.disabled = prev;
-            delete statusCard.resumeButton.dataset.disabledBeforeAuth;
-          } else {
-            statusCard.resumeButton.dataset.disabledBeforeAuth = statusCard.resumeButton.disabled ? 'true' : 'false';
-            statusCard.resumeButton.disabled = true;
-          }
-        }
-      }
 
-      if (authForm) {
-        authForm.addEventListener('submit', async (event) => {
-          event.preventDefault();
-          if (!firebaseAuth) {
-            showAuthError('Authentication is not configured.');
-            return;
-          }
-          const email = authEmail?.value?.trim();
-          const password = authPassword?.value?.trim();
-          if (!email || !password) {
-            showAuthError('Email and password are required.');
-            return;
-          }
-          try {
-            clearAuthError();
-            await firebaseAuth.signInWithEmailAndPassword(email, password);
-            authForm.reset();
-          } catch (error) {
-            console.error('Email sign-in failed', error);
-            showAuthError(error?.message || 'Unable to sign in with email and password.');
-          }
-        });
-      }
-
-      if (authRegisterButton) {
-        authRegisterButton.addEventListener('click', async () => {
-          if (!firebaseAuth) {
-            showAuthError('Authentication is not configured.');
-            return;
-          }
-          const email = authEmail?.value?.trim();
-          const password = authPassword?.value?.trim();
-          if (!email || !password) {
-            showAuthError('Email and password are required to register.');
-            return;
-          }
-          try {
-            clearAuthError();
-            await firebaseAuth.createUserWithEmailAndPassword(email, password);
-            authForm?.reset();
-          } catch (error) {
-            console.error('Registration failed', error);
-            showAuthError(error?.message || 'Unable to create account.');
-          }
-        });
-      }
-
-      if (googleSignInButton) {
-        googleSignInButton.addEventListener('click', async () => {
-          if (!firebaseAuth) {
-            showAuthError('Authentication is not configured.');
-            return;
-          }
-          try {
-            clearAuthError();
-            const provider = new firebase.auth.GoogleAuthProvider();
-            await firebaseAuth.signInWithPopup(provider);
-          } catch (error) {
-            console.error('Google sign-in failed', error);
-            showAuthError(error?.message || 'Unable to sign in with Google.');
-          }
-        });
-      }
-
-      if (signOutButton) {
-        signOutButton.addEventListener('click', async () => {
-          if (!firebaseAuth) {
-            updateAuthChip(null);
-            return;
-          }
-          try {
-            await firebaseAuth.signOut();
-          } catch (error) {
-            console.error('Sign-out failed', error);
-          } finally {
-            window.location.reload();
-          }
-        });
-      }
-
-      let finalReportLoadedFor = null;
-      let lastStatusPayload = null;
-
-      const stageLabels = {
-        plan_generation: 'Plan Generation',
-        data_collection: 'Data Generation',
-        hybrid_analysis: 'Hybrid Analysis',
-        detailed_analysis: 'Detailed Analysis',
-        report_generation: 'Report Generation',
-        human_review: 'Human Review',
-        delivery: 'Delivery',
-      };
-
-      const baseStageOrder = [
-        'plan_generation',
-        'data_collection',
-        'hybrid_analysis',
-        'detailed_analysis',
-        'report_generation',
-        'delivery',
-      ];
-
-      form.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        finalReportLoadedFor = null;
-        lastStatusPayload = null;
-        statusCard.pill.textContent = 'Submitting…';
+        const data = await response.json();
+        updateSummary(data);
+        currentHypothesisId = data.hypothesis_id;
+        statusCard.pill.textContent = 'Submitted';
         statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
-        statusCard.stopButton.disabled = true;
-        const formData = new FormData(form);
-        const apiKey = statusCard.apiKeyInput?.value?.trim() ?? '';
-        if (apiKey) {
-          window.localStorage.setItem(apiKeyStorageKey, apiKey);
+        statusCard.stopButton.disabled = false;
+        pollStatus();
+      } catch (error) {
+        console.error(error);
+        statusCard.pill.textContent = 'Error submitting hypothesis';
+        statusCard.pill.style.background = 'rgba(248, 113, 113, 0.15)';
+        statusCard.summary.textContent =
+          error instanceof Error ? error.message : String(error);
+      }
+    });
+
+    async function pollStatus() {
+      if (!currentHypothesisId) return;
+      statusCard.pill.textContent = 'Processing…';
+      statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
+      try {
+        const headers = await buildHeaders();
+        const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/status`, {
+          headers,
+        });
+        if (!response.ok) throw new Error('Failed to fetch status');
+        const data = await response.json();
+        updateSummary(data);
+        if (!isWorkflowTerminal(data)) {
+          setTimeout(pollStatus, 2500);
         } else {
-          window.localStorage.removeItem(apiKeyStorageKey);
+          await ensureFinalReport(data);
         }
-        const entities = formData.get('entities')
-          ? formData.get('entities').split(',').map((item) => item.trim()).filter(Boolean)
-          : [];
+      } catch (error) {
+        console.error(error);
+        statusCard.pill.textContent = 'Status unavailable';
+        statusCard.pill.style.background = 'rgba(248, 113, 113, 0.15)';
+        statusCard.summary.textContent =
+          error instanceof Error ? error.message : String(error);
+      }
+    }
 
-        const payload = {
-          user_id: formData.get('user_id'),
-          hypothesis_text: formData.get('hypothesis_text'),
-          entities,
-          time_horizon: {
-            start: formData.get('start'),
-            end: formData.get('end'),
-          },
-          risk_appetite: formData.get('risk_appetite'),
-          requires_human_review: formData.get('requires_human_review') === 'true',
-        };
-
-        try {
-          const headers = await buildHeaders(apiKey);
-          const response = await fetch(`${apiBase}/hypotheses`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(payload),
-          });
-
-          if (!response.ok) {
-            const detail = await safeReadDetail(response);
-            throw new Error(`Submission failed: ${response.status} ${detail}`);
-          }
-
-          const data = await response.json();
-          updateSummary(data);
-          currentHypothesisId = data.hypothesis_id;
-          statusCard.pill.textContent = 'Submitted';
-          statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
-          statusCard.stopButton.disabled = false;
-          pollStatus();
-        } catch (error) {
-          console.error(error);
-          statusCard.pill.textContent = 'Error submitting hypothesis';
-          statusCard.pill.style.background = 'rgba(248, 113, 113, 0.15)';
-          statusCard.summary.textContent =
-            error instanceof Error ? error.message : String(error);
-        }
-      });
-
-      async function pollStatus() {
-        if (!currentHypothesisId) return;
+    function updateSummary(data) {
+      lastStatusPayload = data;
+      statusCard.summary.textContent = JSON.stringify(data, null, 2);
+      renderDashboard(data);
+      const stageState = buildStageState(data);
+      renderProgress(stageState);
+      const waiting = stageState.some((stage) => stage.name === 'human_review' && stage.status === 'waiting_review');
+      statusCard.resumeControls.classList.toggle('hidden', !waiting);
+      if (waiting) {
+        statusCard.pill.textContent = 'Awaiting human review';
+        statusCard.pill.style.background = 'rgba(251, 191, 36, 0.2)';
+      } else if (isWorkflowCancelled(data)) {
+        statusCard.pill.textContent = 'Cancelled';
+        statusCard.pill.style.background = 'rgba(248, 113, 113, 0.18)';
+      } else if (isWorkflowComplete(data)) {
+        statusCard.pill.textContent = 'Completed';
+        statusCard.pill.style.background = 'rgba(34, 197, 94, 0.15)';
+      } else if (currentHypothesisId) {
         statusCard.pill.textContent = 'Processing…';
         statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
-        try {
-          const headers = await buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? '');
-          const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/status`, {
-            headers,
-          });
-          if (!response.ok) throw new Error('Failed to fetch status');
-          const data = await response.json();
-          updateSummary(data);
-          if (!isWorkflowTerminal(data)) {
-            setTimeout(pollStatus, 2500);
-          } else {
-            await ensureFinalReport(data);
-          }
-        } catch (error) {
-          console.error(error);
-          statusCard.pill.textContent = 'Status unavailable';
-          statusCard.pill.style.background = 'rgba(248, 113, 113, 0.15)';
-          statusCard.summary.textContent =
-            error instanceof Error ? error.message : String(error);
-        }
+      }
+      const showSummary = isWorkflowComplete(data) || isWorkflowCancelled(data);
+      statusCard.summaryDetails.classList.toggle('hidden', !showSummary);
+      if (!showSummary) {
+        statusCard.summaryDetails.open = false;
+      }
+      statusCard.stopButton.disabled = !shouldEnableStop(data);
+    }
+
+    function buildStageState(data) {
+      const milestones = data.validation?.milestones ?? [];
+      const milestoneMap = new Map(milestones.map((milestone) => [milestone.name, milestone]));
+      const currentStage = data.validation?.current_stage ?? null;
+      const stageSequence = [...baseStageOrder];
+      const requiresHumanReview = milestoneMap.has('human_review') || currentStage === 'human_review';
+      if (requiresHumanReview && !stageSequence.includes('human_review')) {
+        const deliveryIndex = stageSequence.indexOf('delivery');
+        const insertAt = deliveryIndex === -1 ? stageSequence.length : deliveryIndex;
+        stageSequence.splice(insertAt, 0, 'human_review');
       }
 
-      function updateSummary(data) {
-        lastStatusPayload = data;
-        statusCard.summary.textContent = JSON.stringify(data, null, 2);
-        renderDashboard(data);
-        const stageState = buildStageState(data);
-        renderProgress(stageState);
-        const waiting = stageState.some((stage) => stage.name === 'human_review' && stage.status === 'waiting_review');
-        statusCard.resumeControls.classList.toggle('hidden', !waiting);
-        if (waiting) {
-          statusCard.pill.textContent = 'Awaiting human review';
-          statusCard.pill.style.background = 'rgba(251, 191, 36, 0.2)';
-        } else if (isWorkflowCancelled(data)) {
-          statusCard.pill.textContent = 'Cancelled';
-          statusCard.pill.style.background = 'rgba(248, 113, 113, 0.18)';
-        } else if (isWorkflowComplete(data)) {
-          statusCard.pill.textContent = 'Completed';
-          statusCard.pill.style.background = 'rgba(34, 197, 94, 0.15)';
-        } else if (currentHypothesisId) {
-          statusCard.pill.textContent = 'Processing…';
-          statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
+      const currentIndex = currentStage ? stageSequence.indexOf(currentStage) : -1;
+
+      return stageSequence.map((stage, index) => {
+        const milestone = milestoneMap.get(stage);
+        let status = 'pending';
+        if (milestone) {
+          status = String(milestone.status).toLowerCase();
+        } else if (currentStage === stage) {
+          status = 'running';
+        } else if (currentIndex !== -1 && index < currentIndex) {
+          status = 'completed';
         }
-        const showSummary = isWorkflowComplete(data) || isWorkflowCancelled(data);
-        statusCard.summaryDetails.classList.toggle('hidden', !showSummary);
-        if (!showSummary) {
-          statusCard.summaryDetails.open = false;
-        }
-        statusCard.stopButton.disabled = !shouldEnableStop(data);
-      }
+        return {
+          name: stage,
+          label: stageLabels[stage] ?? stage,
+          status,
+          detail: milestone?.detail ?? null,
+        };
+      });
+    }
 
-      function buildStageState(data) {
-        const milestones = data.validation?.milestones ?? [];
-        const milestoneMap = new Map(milestones.map((milestone) => [milestone.name, milestone]));
-        const currentStage = data.validation?.current_stage ?? null;
-        const stageSequence = [...baseStageOrder];
-        const requiresHumanReview = milestoneMap.has('human_review') || currentStage === 'human_review';
-        if (requiresHumanReview && !stageSequence.includes('human_review')) {
-          const deliveryIndex = stageSequence.indexOf('delivery');
-          const insertAt = deliveryIndex === -1 ? stageSequence.length : deliveryIndex;
-          stageSequence.splice(insertAt, 0, 'human_review');
-        }
-
-        const currentIndex = currentStage ? stageSequence.indexOf(currentStage) : -1;
-
-        return stageSequence.map((stage, index) => {
-          const milestone = milestoneMap.get(stage);
-          let status = 'pending';
-          if (milestone) {
-            status = String(milestone.status).toLowerCase();
-          } else if (currentStage === stage) {
-            status = 'running';
-          } else if (currentIndex !== -1 && index < currentIndex) {
-            status = 'completed';
-          }
-          return {
-            name: stage,
-            label: stageLabels[stage] ?? stage,
-            status,
-            detail: milestone?.detail ?? null,
-          };
-        });
-      }
-
-      function renderProgress(stageState) {
-        if (!stageState.length) {
-          statusCard.progressIndicator.style.width = '0%';
-          statusCard.progressPercent.textContent = '0%';
-          if (statusCard.progressSummary) {
-            statusCard.progressSummary.textContent = 'No milestones yet.';
-          }
-          statusCard.progressPanel.classList.remove('hidden');
-          return;
-        }
-
-        const totalStages = stageState.length;
-        let progressUnits = 0;
-        stageState.forEach(({ status }) => {
-          if (status === 'completed') {
-            progressUnits += 1;
-          } else if (status === 'running') {
-            progressUnits += 0.6;
-          } else if (status === 'waiting_review') {
-            progressUnits += 0.8;
-          }
-        });
-        const percentage = Math.min(100, Math.round((progressUnits / totalStages) * 100));
-        statusCard.progressIndicator.style.width = `${percentage}%`;
-        statusCard.progressPercent.textContent = `${percentage}%`;
+    function renderProgress(stageState) {
+      if (!stageState.length) {
+        statusCard.progressIndicator.style.width = '0%';
+        statusCard.progressPercent.textContent = '0%';
         if (statusCard.progressSummary) {
-          const completed = stageState.filter((stage) => stage.status === 'completed').length;
-          const active = stageState.find((stage) => stage.status === 'running' || stage.status === 'waiting_review');
-          let summary = `${completed}/${totalStages} stages complete`;
-          if (active) {
-            const verb = active.status === 'waiting_review' ? 'awaiting review' : 'in progress';
-            summary += ` • ${active.label} ${verb}`;
-          } else if (completed === totalStages) {
-            summary += ' • Workflow finished';
-          }
-          statusCard.progressSummary.textContent = summary;
+          statusCard.progressSummary.textContent = 'No milestones yet.';
         }
         statusCard.progressPanel.classList.remove('hidden');
+        return;
       }
 
-        function renderDashboard(data) {
-          const validation = data?.validation;
-          const hasValidation = Boolean(validation);
-          if (dashboard.container) {
-            dashboard.container.classList.toggle('hidden', !hasValidation);
-          }
-          if (!hasValidation || !validation) {
-            return;
-          }
-
-          if (dashboard.metricScore) {
-            dashboard.metricScore.textContent = formatPercent(validation.score);
-          }
-          if (dashboard.metricConfidence) {
-            dashboard.metricConfidence.textContent = formatPercent(validation.confidence);
-          }
-          if (dashboard.metricConclusion) {
-            dashboard.metricConclusion.textContent = validation.conclusion ?? 'Pending validation';
-          }
-          if (dashboard.metricStage) {
-            dashboard.metricStage.textContent = formatStageName(validation.current_stage);
-          }
-          const workflowStatus = data.workflow_status ?? data.status ?? 'pending';
-          if (dashboard.metricWorkflowStatus) {
-            dashboard.metricWorkflowStatus.textContent = formatStageName(workflowStatus);
-          }
-          if (dashboard.metaStatus) {
-            dashboard.metaStatus.textContent = formatStageName(data.status ?? workflowStatus ?? 'pending');
-          }
-          if (dashboard.metaHypothesis) {
-            dashboard.metaHypothesis.textContent = data.hypothesis_id ?? '—';
-          }
-          if (dashboard.metaWorkflow) {
-            dashboard.metaWorkflow.textContent = data.workflow_id ?? '—';
-          }
-          if (dashboard.metaRun) {
-            dashboard.metaRun.textContent = data.workflow_run_id ?? '—';
-          }
-          if (dashboard.metaUpdated) {
-            dashboard.metaUpdated.textContent = new Date().toLocaleString();
-          }
-
-          renderMilestones(validation.milestones ?? []);
-          renderEvidence(validation.evidence ?? []);
-          setupReportLink(validation.evidence ?? []);
-        }
-
-        function renderMilestones(milestones) {
-          if (!dashboard.milestoneTable) return;
-          const container = dashboard.milestoneTable;
-          container.textContent = '';
-          if (!Array.isArray(milestones) || milestones.length === 0) {
-            container.classList.add('empty-state');
-            container.textContent = 'No milestones yet.';
-            return;
-          }
-          container.classList.remove('empty-state');
-          milestones.forEach((milestone) => {
-            const item = document.createElement('div');
-            item.className = 'timeline-item';
-            item.dataset.status = String(milestone.status || 'pending').toLowerCase();
-
-            const title = document.createElement('div');
-            title.className = 'timeline-title';
-            title.textContent = stageLabels[milestone.name] ?? formatStageName(milestone.name);
-            item.appendChild(title);
-
-            const badge = document.createElement('span');
-            badge.className = 'tag';
-            badge.textContent = formatStageName(milestone.status);
-            item.appendChild(badge);
-
-            if (milestone.detail) {
-              const detail = document.createElement('div');
-              detail.className = 'timeline-detail';
-              detail.textContent = milestone.detail;
-              item.appendChild(detail);
-            }
-
-            container.appendChild(item);
-          });
-        }
-
-        function renderEvidence(evidence) {
-          if (!dashboard.evidenceList) return;
-          const container = dashboard.evidenceList;
-          container.textContent = '';
-          if (!Array.isArray(evidence) || evidence.length === 0) {
-            container.classList.add('empty-state');
-            container.textContent = 'No evidence captured yet.';
-            return;
-          }
-          container.classList.remove('empty-state');
-          evidence.forEach((item) => {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'evidence-item';
-
-            const type = document.createElement('div');
-            type.className = 'evidence-type';
-            type.textContent = formatStageName(item.type);
-            wrapper.appendChild(type);
-
-            if (item.uri) {
-              const uri = document.createElement('div');
-              uri.className = 'evidence-uri';
-              uri.textContent = item.uri;
-              wrapper.appendChild(uri);
-
-              const actions = document.createElement('div');
-              actions.className = 'evidence-actions';
-              const anchor = document.createElement('a');
-              anchor.className = 'pill';
-              anchor.textContent = 'Open';
-              anchor.href = item.uri;
-              anchor.target = '_blank';
-              anchor.rel = 'noopener';
-              actions.appendChild(anchor);
-              wrapper.appendChild(actions);
-            }
-
-            container.appendChild(wrapper);
-          });
-        }
-
-        function setupReportLink(evidence) {
-          if (!dashboard.reportDownloadWrapper || !dashboard.reportDownload) return;
-          const reportRef = Array.isArray(evidence)
-            ? evidence.find((entry) => String(entry.type).toLowerCase() === 'report_document')
-            : null;
-          if (reportRef && reportRef.uri) {
-            dashboard.reportDownloadWrapper.classList.remove('hidden');
-            dashboard.reportDownload.href = reportRef.uri;
-            dashboard.reportDownload.download = '';
-          } else {
-            dashboard.reportDownloadWrapper.classList.add('hidden');
-            dashboard.reportDownload.removeAttribute('href');
-            dashboard.reportDownload.removeAttribute('download');
-          }
-        }
-
-        async function ensureFinalReport(latestData) {
-          if (!currentHypothesisId) return;
-          if (finalReportLoadedFor === currentHypothesisId) return;
-          try {
-            const headers = await buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? '');
-            const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/report`, {
-              headers,
-            });
-            if (!response.ok) return;
-            const summary = await response.json();
-            finalReportLoadedFor = currentHypothesisId;
-            const merged = { ...latestData, validation: summary };
-            updateSummary(merged);
-          } catch (error) {
-            console.error('Failed to load final report', error);
-          }
-        }
-
-        function formatPercent(value) {
-          if (typeof value !== 'number' || Number.isNaN(value)) return '—';
-          const clamped = Math.max(0, Math.min(1, value));
-          return `${(Math.round(clamped * 1000) / 10).toFixed(1)}%`;
-        }
-
-        function formatStageName(value) {
-          if (value === undefined || value === null) return '—';
-          return String(value)
-            .replace(/[_-]+/g, ' ')
-            .split(' ')
-            .filter(Boolean)
-            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-            .join(' ');
-        }
-
-      function isWorkflowComplete(data) {
-        const milestones = data.validation?.milestones ?? [];
-        const delivery = milestones.find((milestone) => milestone.name === 'delivery');
-        return Boolean(delivery && String(delivery.status).toLowerCase() === 'completed');
-      }
-
-      function isWorkflowCancelled(data) {
-        const status = String(data.workflow_status ?? data.status ?? '').toUpperCase();
-        return status === 'CANCELLED';
-      }
-
-      function isWorkflowTerminal(data) {
-        const status = String(data.workflow_status ?? '').toUpperCase();
-        if (!status) return isWorkflowComplete(data) || isWorkflowCancelled(data);
-        return ['COMPLETED', 'FAILED', 'CANCELLED'].includes(status);
-      }
-
-      statusCard.resumeButton.addEventListener('click', async () => {
-        if (!currentHypothesisId) return;
-        finalReportLoadedFor = null;
-        statusCard.pill.textContent = 'Submitting decision…';
-        statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
-        try {
-          const headers = await buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? '');
-          const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/resume`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ decision: statusCard.resumeDecision.value }),
-          });
-          if (!response.ok) {
-            const detail = await safeReadDetail(response);
-            throw new Error(`Resume failed: ${response.status} ${detail}`);
-          }
-          const data = await response.json();
-          updateSummary(data);
-          if (isWorkflowTerminal(data)) {
-            await ensureFinalReport(data);
-          }
-          statusCard.pill.textContent = 'Review completed';
-          statusCard.pill.style.background = 'rgba(34, 197, 94, 0.15)';
-        } catch (error) {
-          console.error(error);
-          statusCard.pill.textContent = 'Resume failed';
-          statusCard.pill.style.background = 'rgba(248, 113, 113, 0.15)';
-          statusCard.summary.textContent =
-            error instanceof Error ? error.message : String(error);
+      const totalStages = stageState.length;
+      let progressUnits = 0;
+      stageState.forEach(({ status }) => {
+        if (status === 'completed') {
+          progressUnits += 1;
+        } else if (status === 'running') {
+          progressUnits += 0.6;
+        } else if (status === 'waiting_review') {
+          progressUnits += 0.8;
         }
       });
+      const percentage = Math.min(100, Math.round((progressUnits / totalStages) * 100));
+      statusCard.progressIndicator.style.width = `${percentage}%`;
+      statusCard.progressPercent.textContent = `${percentage}%`;
+      if (statusCard.progressSummary) {
+        const completed = stageState.filter((stage) => stage.status === 'completed').length;
+        const active = stageState.find((stage) => stage.status === 'running' || stage.status === 'waiting_review');
+        let summary = `${completed}/${totalStages} stages complete`;
+        if (active) {
+          const verb = active.status === 'waiting_review' ? 'awaiting review' : 'in progress';
+          summary += ` • ${active.label} ${verb}`;
+        } else if (completed === totalStages) {
+          summary += ' • Workflow finished';
+        }
+        statusCard.progressSummary.textContent = summary;
+      }
+      statusCard.progressPanel.classList.remove('hidden');
+    }
 
-      statusCard.stopButton.addEventListener('click', async () => {
-        if (!currentHypothesisId) return;
-        finalReportLoadedFor = null;
-        statusCard.stopButton.disabled = true;
-        statusCard.pill.textContent = 'Stopping…';
+    function renderDashboard(data) {
+      const validation = data?.validation;
+      const hasValidation = Boolean(validation);
+      if (dashboard.container) {
+        dashboard.container.classList.toggle('hidden', !hasValidation);
+      }
+      if (!hasValidation || !validation) {
+        return;
+      }
+
+      if (dashboard.metricScore) {
+        dashboard.metricScore.textContent = formatPercent(validation.score);
+      }
+      if (dashboard.metricConfidence) {
+        dashboard.metricConfidence.textContent = formatPercent(validation.confidence);
+      }
+      if (dashboard.metricConclusion) {
+        dashboard.metricConclusion.textContent = validation.conclusion ?? 'Pending validation';
+      }
+      if (dashboard.metricStage) {
+        dashboard.metricStage.textContent = formatStageName(validation.current_stage);
+      }
+      const workflowStatus = data.workflow_status ?? data.status ?? 'pending';
+      if (dashboard.metricWorkflowStatus) {
+        dashboard.metricWorkflowStatus.textContent = formatStageName(workflowStatus);
+      }
+      if (dashboard.metaStatus) {
+        dashboard.metaStatus.textContent = formatStageName(data.status ?? workflowStatus ?? 'pending');
+      }
+      if (dashboard.metaHypothesis) {
+        dashboard.metaHypothesis.textContent = data.hypothesis_id ?? '—';
+      }
+      if (dashboard.metaWorkflow) {
+        dashboard.metaWorkflow.textContent = data.workflow_id ?? '—';
+      }
+      if (dashboard.metaRun) {
+        dashboard.metaRun.textContent = data.workflow_run_id ?? '—';
+      }
+      if (dashboard.metaUpdated) {
+        dashboard.metaUpdated.textContent = new Date().toLocaleString();
+      }
+
+      renderMilestones(validation.milestones ?? []);
+      renderEvidence(validation.evidence ?? []);
+      setupReportLink(validation.evidence ?? []);
+    }
+
+    function renderMilestones(milestones) {
+      if (!dashboard.milestoneTable) return;
+      const container = dashboard.milestoneTable;
+      container.textContent = '';
+      if (!Array.isArray(milestones) || milestones.length === 0) {
+        container.classList.add('empty-state');
+        container.textContent = 'No milestones yet.';
+        return;
+      }
+      container.classList.remove('empty-state');
+      milestones.forEach((milestone) => {
+        const item = document.createElement('div');
+        item.className = 'timeline-item';
+        item.dataset.status = String(milestone.status || 'pending').toLowerCase();
+
+        const title = document.createElement('div');
+        title.className = 'timeline-title';
+        title.textContent = stageLabels[milestone.name] ?? formatStageName(milestone.name);
+        item.appendChild(title);
+
+        const badge = document.createElement('span');
+        badge.className = 'tag';
+        badge.textContent = formatStageName(milestone.status);
+        item.appendChild(badge);
+
+        if (milestone.detail) {
+          const detail = document.createElement('div');
+          detail.className = 'timeline-detail';
+          detail.textContent = milestone.detail;
+          item.appendChild(detail);
+        }
+
+        container.appendChild(item);
+      });
+    }
+
+    function renderEvidence(evidence) {
+      if (!dashboard.evidenceList) return;
+      const container = dashboard.evidenceList;
+      container.textContent = '';
+      if (!Array.isArray(evidence) || evidence.length === 0) {
+        container.classList.add('empty-state');
+        container.textContent = 'No evidence captured yet.';
+        return;
+      }
+      container.classList.remove('empty-state');
+      evidence.forEach((item) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'evidence-item';
+
+        const type = document.createElement('div');
+        type.className = 'evidence-type';
+        type.textContent = formatStageName(item.type);
+        wrapper.appendChild(type);
+
+        if (item.uri) {
+          const uri = document.createElement('div');
+          uri.className = 'evidence-uri';
+          uri.textContent = item.uri;
+          wrapper.appendChild(uri);
+
+          const actions = document.createElement('div');
+          actions.className = 'evidence-actions';
+          const anchor = document.createElement('a');
+          anchor.className = 'pill';
+          anchor.textContent = 'Open';
+          anchor.href = item.uri;
+          anchor.target = '_blank';
+          anchor.rel = 'noopener';
+          actions.appendChild(anchor);
+          wrapper.appendChild(actions);
+        }
+
+        container.appendChild(wrapper);
+      });
+    }
+
+    function setupReportLink(evidence) {
+      if (!dashboard.reportDownloadWrapper || !dashboard.reportDownload) return;
+      const reportRef = Array.isArray(evidence)
+        ? evidence.find((entry) => String(entry.type).toLowerCase() === 'report_document')
+        : null;
+      if (reportRef && reportRef.uri) {
+        dashboard.reportDownloadWrapper.classList.remove('hidden');
+        dashboard.reportDownload.href = reportRef.uri;
+        dashboard.reportDownload.download = '';
+      } else {
+        dashboard.reportDownloadWrapper.classList.add('hidden');
+        dashboard.reportDownload.removeAttribute('href');
+        dashboard.reportDownload.removeAttribute('download');
+      }
+    }
+
+    async function ensureFinalReport(latestData) {
+      if (!currentHypothesisId) return;
+      if (finalReportLoadedFor === currentHypothesisId) return;
+      try {
+        const headers = await buildHeaders();
+        const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/report`, {
+          headers,
+        });
+        if (!response.ok) return;
+        const summary = await response.json();
+        finalReportLoadedFor = currentHypothesisId;
+        const merged = { ...latestData, validation: summary };
+        updateSummary(merged);
+      } catch (error) {
+        console.error('Failed to load final report', error);
+      }
+    }
+
+    function formatPercent(value) {
+      if (typeof value !== 'number' || Number.isNaN(value)) return '—';
+      const clamped = Math.max(0, Math.min(1, value));
+      return `${(Math.round(clamped * 1000) / 10).toFixed(1)}%`;
+    }
+
+    function formatStageName(value) {
+      if (value === undefined || value === null) return '—';
+      return String(value)
+        .replace(/[_-]+/g, ' ')
+        .split(' ')
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+    }
+
+    function isWorkflowComplete(data) {
+      const milestones = data.validation?.milestones ?? [];
+      const delivery = milestones.find((milestone) => milestone.name === 'delivery');
+      return Boolean(delivery && String(delivery.status).toLowerCase() === 'completed');
+    }
+
+    function isWorkflowCancelled(data) {
+      const status = String(data.workflow_status ?? data.status ?? '').toUpperCase();
+      return status === 'CANCELLED';
+    }
+
+    function isWorkflowTerminal(data) {
+      const status = String(data.workflow_status ?? '').toUpperCase();
+      if (!status) return isWorkflowComplete(data) || isWorkflowCancelled(data);
+      return ['COMPLETED', 'FAILED', 'CANCELLED'].includes(status);
+    }
+
+    statusCard.resumeButton.addEventListener('click', async () => {
+      if (!currentHypothesisId) return;
+      finalReportLoadedFor = null;
+      statusCard.pill.textContent = 'Submitting decision…';
+      statusCard.pill.style.background = 'rgba(255, 255, 255, 0.08)';
+      try {
+        const headers = await buildHeaders();
+        const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/resume`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ decision: statusCard.resumeDecision.value }),
+        });
+        if (!response.ok) {
+          const detail = await safeReadDetail(response);
+          throw new Error(`Resume failed: ${response.status} ${detail}`);
+        }
+        const data = await response.json();
+        updateSummary(data);
+        if (isWorkflowTerminal(data)) {
+          await ensureFinalReport(data);
+        }
+        statusCard.pill.textContent = 'Review completed';
+        statusCard.pill.style.background = 'rgba(34, 197, 94, 0.15)';
+      } catch (error) {
+        console.error(error);
+        statusCard.pill.textContent = 'Resume failed';
+        statusCard.pill.style.background = 'rgba(248, 113, 113, 0.15)';
+        statusCard.summary.textContent =
+          error instanceof Error ? error.message : String(error);
+      }
+    });
+
+    statusCard.stopButton.addEventListener('click', async () => {
+      if (!currentHypothesisId) return;
+      finalReportLoadedFor = null;
+      statusCard.stopButton.disabled = true;
+      statusCard.pill.textContent = 'Stopping…';
+      statusCard.pill.style.background = 'rgba(248, 113, 113, 0.18)';
+      try {
+        const headers = await buildHeaders();
+        const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/cancel`, {
+          method: 'POST',
+          headers,
+        });
+        if (!response.ok) {
+          const detail = await safeReadDetail(response);
+          throw new Error(`Cancel failed: ${response.status} ${detail}`);
+        }
+        const data = await response.json();
+        updateSummary(data);
+        if (isWorkflowTerminal(data)) {
+          await ensureFinalReport(data);
+        }
+        statusCard.pill.textContent = 'Cancelled';
         statusCard.pill.style.background = 'rgba(248, 113, 113, 0.18)';
-        try {
-          const headers = await buildHeaders(window.localStorage.getItem(apiKeyStorageKey) ?? '');
-          const response = await fetch(`${apiBase}/hypotheses/${currentHypothesisId}/cancel`, {
-            method: 'POST',
-            headers,
-          });
-          if (!response.ok) {
-            const detail = await safeReadDetail(response);
-            throw new Error(`Cancel failed: ${response.status} ${detail}`);
-          }
-          const data = await response.json();
-          updateSummary(data);
-          if (isWorkflowTerminal(data)) {
-            await ensureFinalReport(data);
-          }
-          statusCard.pill.textContent = 'Cancelled';
-          statusCard.pill.style.background = 'rgba(248, 113, 113, 0.18)';
-        } catch (error) {
-          console.error(error);
-          statusCard.pill.textContent = 'Cancel failed';
-          statusCard.pill.style.background = 'rgba(248, 113, 113, 0.25)';
-          statusCard.summary.textContent =
-            error instanceof Error ? error.message : String(error);
-          statusCard.stopButton.disabled = false;
-        }
-      });
-
-      async function buildHeaders(apiKey) {
-        const headers = { 'Content-Type': 'application/json' };
-        if (apiKey) {
-          headers['x-api-key'] = apiKey;
-        }
-        if (firebaseAuth && firebaseAuth.currentUser) {
-          try {
-            const token = await firebaseAuth.currentUser.getIdToken();
-            if (token) {
-              headers.Authorization = `Bearer ${token}`;
-            }
-          } catch (error) {
-            console.error('Failed to fetch Firebase ID token', error);
-          }
-        }
-        return headers;
+      } catch (error) {
+        console.error(error);
+        statusCard.pill.textContent = 'Cancel failed';
+        statusCard.pill.style.background = 'rgba(248, 113, 113, 0.25)';
+        statusCard.summary.textContent =
+          error instanceof Error ? error.message : String(error);
+        statusCard.stopButton.disabled = false;
       }
+    });
 
-      async function safeReadDetail(response) {
-        try {
-          const text = await response.text();
-          return text ? `- ${text}` : '';
-        } catch (readErr) {
-          console.error('Failed to read error response', readErr);
-          return '';
-        }
-      }
+    async function buildHeaders() {
+      return { 'Content-Type': 'application/json' };
+    }
 
-      function shouldEnableStop(data) {
-        if (!currentHypothesisId) return false;
-        const status = String(data.workflow_status ?? data.status ?? '').toUpperCase();
-        if (!status) return true;
-        return !['COMPLETED', 'FAILED', 'CANCELLED'].includes(status);
+    async function safeReadDetail(response) {
+      try {
+        const text = await response.text();
+        return text ? `- ${text}` : '';
+      } catch (readErr) {
+        console.error('Failed to read error response', readErr);
+        return '';
       }
-    </script>
-  </body>
+    }
+
+    function shouldEnableStop(data) {
+      if (!currentHypothesisId) return false;
+      const status = String(data.workflow_status ?? data.status ?? '').toUpperCase();
+      if (!status) return true;
+      return !['COMPLETED', 'FAILED', 'CANCELLED'].includes(status);
+    }
+  </script>
+</body>
+
 </html>

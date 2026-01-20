@@ -106,3 +106,20 @@ class ResumeRequest(BaseModel):
         description="Outcome of the manual review step.",
     )
 
+
+class HypothesisRecord(BaseModel):
+    """Internal storage model for hypothesis records."""
+
+    hypothesis_id: UUID
+    workflow_id: str
+    workflow_run_id: str
+    request: HypothesisRequest
+    status: str
+    validation: ValidationSummary
+
+    @property
+    def user_id(self) -> str:
+        """Helper to expose user_id from the nested request."""
+        return self.request.user_id
+
+

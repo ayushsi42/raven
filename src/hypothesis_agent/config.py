@@ -12,36 +12,18 @@ class AppSettings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
     api_prefix: str = "/v1"
-    temporal_namespace: str = "default"
-    temporal_task_queue: str = "raven-hypothesis"
-    temporal_address: str = "localhost:7233"
-    temporal_workflow: str = "HypothesisValidationWorkflow"
     artifact_store_path: str = "./data/artifacts"
-    alpha_vantage_api_key: str = "U77YNHBLD6CUB9KU"
-    sec_user_agent: str = "RAVEN/0.1 (support@example.com)"
-    notification_email: str | None = None
-    api_key: str | None = None
-    require_authentication: bool = False
-    enable_prometheus: bool = True
+    
+    # Required API keys
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
-    composio_user_id: str = "0000-0000-0000"
-    composio_api_key: str | None = None
-    firebase_project_id: str | None = None
-    firebase_credentials_path: str | None = None
-    firebase_collection: str = "hypotheses"
-    firebase_app_name: str | None = None
-    firebase_auth_check_revoked: bool = False
-    firebase_web_api_key: str | None = None
-    firebase_web_auth_domain: str | None = None
-    firebase_web_storage_bucket: str | None = None
-    firebase_web_messaging_sender_id: str | None = None
-    firebase_web_app_id: str | None = None
-    firebase_web_measurement_id: str | None = None
-    use_firestore: bool = True
-    use_temporal_runtime: bool = False
+    
+    # Optional settings
+    sec_user_agent: str = "RAVEN/0.1 (support@example.com)"
+    notification_email: str | None = None
+    enable_prometheus: bool = True
 
-    model_config = SettingsConfigDict(env_prefix="RAVEN_", case_sensitive=False, env_file=".env",extra="ignore")
+    model_config = SettingsConfigDict(case_sensitive=False, env_file=".env", extra="ignore")
 
 
 @lru_cache

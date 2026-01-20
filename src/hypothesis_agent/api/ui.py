@@ -1,4 +1,4 @@
-"""Public-facing UI routes for the RAVEN hypothesis agent."""
+"""UI route handlers for the RAVEN web interface."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,33 +7,23 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-ui_router = APIRouter()
+from hypothesis_agent.config import get_settings
 
-_TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
-templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
+# Setup templates directory relative to this file
+_BASE_DIR = Path(__file__).parent
+templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
+
+ui_router = APIRouter(tags=["UI"])
 
 
 @ui_router.get("/", response_class=HTMLResponse)
-async def landing_page(request: Request) -> HTMLResponse:
-    """Render the primary hypothesis submission interface."""
-
-    settings = request.app.state.settings
-    firebase_config = {
-        "apiKey": settings.firebase_web_api_key,
-        "authDomain": settings.firebase_web_auth_domain,
-        "projectId": settings.firebase_project_id,
-        "storageBucket": settings.firebase_web_storage_bucket,
-        "messagingSenderId": settings.firebase_web_messaging_sender_id,
-        "appId": settings.firebase_web_app_id,
-        "measurementId": settings.firebase_web_measurement_id,
-    }
-    firebase_config = {key: value for key, value in firebase_config.items() if value}
+async def get_landing_page(request: Request):
+    """Render the application landing page."""
+    settings = get_settings()
     return templates.TemplateResponse(
-        request,
         "landing.html",
         {
+            "request": request,
             "api_prefix": settings.api_prefix,
-            "firebase_config": firebase_config,
-            "require_authentication": settings.require_authentication,
         },
     )

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 from datetime import date
 from pathlib import Path
 from uuid import uuid4
@@ -80,36 +81,41 @@ class _StubLLM(BaseLLM):
 
 
 STUB_TOOL_RESPONSES: dict[str, dict[str, object]] = {
-    "ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED": {
-        "Monthly Adjusted Time Series": {
-            "2024-01-31": {"5. adjusted close": "100.0"},
-            "2024-02-29": {"5. adjusted close": "102.0"},
-            "2024-03-31": {"5. adjusted close": "104.5"},
-            "2024-04-30": {"5. adjusted close": "106.0"},
-            "2024-05-31": {"5. adjusted close": "108.5"},
-            "2024-06-30": {"5. adjusted close": "112.0"},
+    "YFINANCE_HISTORICAL_PRICES": {
+        "symbol": "AAPL",
+        "period": "1y",
+        "interval": "1d",
+        "data": {
+            "2024-01-31": {"close": 100.0},
+            "2024-02-29": {"close": 102.0},
+            "2024-03-31": {"close": 104.5},
+            "2024-04-30": {"close": 106.0},
+            "2024-05-31": {"close": 108.5},
+            "2024-06-30": {"close": 112.0},
         }
     },
-    "ALPHA_VANTAGE_COMPANY_OVERVIEW": {
-        "OperatingMarginTTM": "0.21",
-        "ProfitMargin": "0.15",
+    "YFINANCE_COMPANY_INFO": {
+        "symbol": "AAPL",
+        "operatingMargins": 0.21,
+        "profitMargins": 0.15,
     },
-    "ALPHA_VANTAGE_NEWS_SENTIMENT": {
-        "feed": [
-            {"overall_sentiment_score": 0.3},
-            {"overall_sentiment_score": 0.1},
+    "YFINANCE_NEWS": {
+        "symbol": "AAPL",
+        "news": [
+            {"title": "Positive News", "publisher": "Reuters", "providerPublishTime": 1700000000},
         ]
     },
-    "ALPHA_VANTAGE_CASH_FLOW": {
-        "annualReports": [
-            {"operatingCashflow": "1200000"},
-            {"operatingCashflow": "900000"},
-        ]
+    "YFINANCE_CASH_FLOW": {
+        "symbol": "AAPL",
+        "cash_flow": {
+            "2023-12-31": {"Operating Cash Flow": 1200000.0},
+        }
     },
-    "ALPHA_VANTAGE_BALANCE_SHEET": {
-        "annualReports": [
-            {"totalAssets": "5000000", "totalLiabilities": "2100000"},
-        ]
+    "YFINANCE_BALANCE_SHEET": {
+        "symbol": "AAPL",
+        "balance_sheet": {
+            "2023-12-31": {"Total Assets": 5000000.0, "Total Liabilities": 2100000.0},
+        }
     },
 }
 

@@ -1,1 +1,1 @@
-"""Orchestration utilities built on LangGraph and Composio."""
+"""Hypothesis validation orchestration using LangGraph and YFinance."""

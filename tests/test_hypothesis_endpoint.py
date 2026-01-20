@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 from datetime import date
 from pathlib import Path
 from typing import AsyncIterator
@@ -81,35 +82,28 @@ class _StubLLM(BaseLLM):
 
 
 STUB_TOOL_RESPONSES: dict[str, dict[str, object]] = {
-    "ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED": {
-        "Monthly Adjusted Time Series": {
-            "2024-01-31": {"5. adjusted close": "100.0"},
-            "2024-02-29": {"5. adjusted close": "102.0"},
-            "2024-03-31": {"5. adjusted close": "104.5"},
-            "2024-04-30": {"5. adjusted close": "106.0"},
-            "2024-05-31": {"5. adjusted close": "108.5"},
-            "2024-06-30": {"5. adjusted close": "112.0"},
+    "YFINANCE_HISTORICAL_PRICES": {
+        "symbol": "AAPL",
+        "period": "1y",
+        "interval": "1d",
+        "data": {
+            "2024-01-31": {"close": 100.0},
+            "2024-02-29": {"close": 102.0},
+            "2024-03-31": {"close": 104.5},
+            "2024-04-30": {"close": 106.0},
+            "2024-05-31": {"close": 108.5},
+            "2024-06-30": {"close": 112.0},
         }
     },
-    "ALPHA_VANTAGE_COMPANY_OVERVIEW": {
-        "OperatingMarginTTM": "0.21",
-        "ProfitMargin": "0.15",
+    "YFINANCE_COMPANY_INFO": {
+        "symbol": "AAPL",
+        "operatingMargins": 0.21,
+        "profitMargins": 0.15,
     },
-    "ALPHA_VANTAGE_NEWS_SENTIMENT": {
-        "feed": [
-            {"overall_sentiment_score": 0.3},
-            {"overall_sentiment_score": 0.1},
-        ]
-    },
-    "ALPHA_VANTAGE_CASH_FLOW": {
-        "annualReports": [
-            {"operatingCashflow": "1200000"},
-            {"operatingCashflow": "900000"},
-        ]
-    },
-    "ALPHA_VANTAGE_BALANCE_SHEET": {
-        "annualReports": [
-            {"totalAssets": "5000000", "totalLiabilities": "2100000"},
+    "YFINANCE_NEWS": {
+        "symbol": "AAPL",
+        "news": [
+            {"title": "Positive News", "publisher": "Reuters", "providerPublishTime": 1700000000},
         ]
     },
 }
@@ -140,68 +134,9 @@ class _StubToolSet:
         return _StubTool(self.invocations, name, self._responses)
 
 
-class _FakeSnapshot:
-    def __init__(self, data: dict | None) -> None:
-        self._data = data
-
-    @property
-    def exists(self) -> bool:
-        return self._data is not None
-
-    def to_dict(self) -> dict | None:
-        return self._data
-
-
-class _FakeDocumentReference:
-    def __init__(self, storage: dict, key: str) -> None:
-        self._storage = storage
-        self._key = key
-
-    def set(self, data: dict) -> None:
-        self._storage[self._key] = data
-
-    def get(self) -> _FakeSnapshot:
-        return _FakeSnapshot(self._storage.get(self._key))
-
-
-class _FakeCollection:
-    def __init__(self, storage: dict) -> None:
-        self._storage = storage
-
-    def document(self, key: str) -> _FakeDocumentReference:
-        return _FakeDocumentReference(self._storage, key)
-
-
-class _FakeFirestoreClient:
-    def __init__(self) -> None:
-        self._storage: dict[str, dict[str, dict]] = {}
-
-    def collection(self, name: str) -> _FakeCollection:
-        bucket = self._storage.setdefault(name, {})
-        return _FakeCollection(bucket)
-
-
-class _FakeFirebaseHandle:
-    def __init__(self, collection: str = "hypotheses") -> None:
-        self.client = _FakeFirestoreClient()
-        self.collection = collection
-
-    async def dispose(self) -> None:
-        pass
-
-
 @pytest_asyncio.fixture
 async def test_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[FastAPI]:
-    """Provide an application instance backed by a fake Firestore datastore."""
-    firebase_handle = _FakeFirebaseHandle()
-    monkeypatch.setattr(
-        "hypothesis_agent.db.firebase.initialize_firebase",
-        lambda settings: firebase_handle,
-    )
-    monkeypatch.setattr(
-        "hypothesis_agent.main.initialize_firebase",
-        lambda settings: firebase_handle,
-    )
+    """Provide an application instance backed by in-memory storage."""
     artifact_root = tmp_path / "artifacts"
     settings = AppSettings(
         artifact_store_path=str(artifact_root),
@@ -224,7 +159,7 @@ async def test_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIter
         _factory,
     )
     get_settings.cache_clear()  # type: ignore[attr-defined]
-    app = create_app()
+    app = create_app(settings=settings)
     app.state.stub_toolset = toolset
     app.state.hypothesis_service = HypothesisService(
         repository=app.state.hypothesis_repository,
@@ -323,7 +258,6 @@ async def test_get_unknown_hypothesis_status_returns_404(test_app) -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"].startswith("Hypothesis")
-
 
 
 @pytest.mark.asyncio

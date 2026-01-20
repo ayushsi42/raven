@@ -9,10 +9,10 @@ import pytest
 from hypothesis_agent.config import get_settings
 
 # Ensure tests run in isolated, deterministic mode without external network traffic.
-os.environ.setdefault("RAVEN_ENVIRONMENT", "test")
+os.environ.setdefault("ENVIRONMENT", "test")
 # Use a dedicated artifact directory under the project root for test outputs.
 _DEFAULT_ARTIFACT_ROOT = Path(".pytest_artifacts").resolve()
-os.environ.setdefault("RAVEN_ARTIFACT_STORE_PATH", str(_DEFAULT_ARTIFACT_ROOT))
+os.environ.setdefault("ARTIFACT_STORE_PATH", str(_DEFAULT_ARTIFACT_ROOT))
 
 
 @pytest.fixture(autouse=True)

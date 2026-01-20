@@ -11,11 +11,9 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from hypothesis_agent.api.router import api_router
 from hypothesis_agent.api.ui import ui_router
 from hypothesis_agent.config import AppSettings, get_settings
-from hypothesis_agent.db.firebase import FirebaseHandle, initialize_firebase
 from hypothesis_agent.logging import configure_logging
 from hypothesis_agent.metrics import record_request_metrics
 from hypothesis_agent.repositories.hypothesis_repository import (
-    FirestoreHypothesisRepository,
     HypothesisRepository,
     InMemoryHypothesisRepository,
 )
@@ -40,27 +38,15 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     app_settings = settings or get_settings()
     configure_logging(app_settings.log_level)
 
-    firebase_handle: FirebaseHandle | None = None
-    repository: HypothesisRepository
-    if app_settings.use_firestore:
-        firebase_handle = initialize_firebase(app_settings)
-        repository = FirestoreHypothesisRepository(firebase_handle.client, firebase_handle.collection)
-    else:
-        repository = InMemoryHypothesisRepository()
-    workflow_client: HypothesisWorkflowClient
-    if app_settings.use_temporal_runtime:
-        try:
-            from hypothesis_agent.workflows.temporal_runtime import TemporalWorkflowRuntime  # local import to avoid optional dependency
-        except ModuleNotFoundError as exc:
-            raise RuntimeError("Temporal runtime requires the 'temporalio' package. Install optional dependency to enable resumable workflows.") from exc
-        workflow_client = TemporalWorkflowRuntime(app_settings)
-    else:
-        workflow_client = HypothesisWorkflowClient(
-            namespace=app_settings.temporal_namespace,
-            task_queue=app_settings.temporal_task_queue,
-            workflow=app_settings.temporal_workflow,
-            address=app_settings.temporal_address,
-        )
+    repository = InMemoryHypothesisRepository()
+    
+    # Always use the LangGraph-based workflow client
+    workflow_client = HypothesisWorkflowClient(
+        namespace="default",
+        task_queue="raven-hypothesis",
+        workflow="HypothesisValidationWorkflow",
+        address="localhost:7233",
+    )
     hypothesis_service = HypothesisService(
         repository=repository,
         workflow_client=workflow_client,
@@ -69,7 +55,6 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.settings = app_settings
-        app.state.firebase = firebase_handle
         app.state.workflow_client = workflow_client
         app.state.hypothesis_repository = repository
         app.state.hypothesis_service = hypothesis_service
@@ -77,8 +62,6 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             yield
         finally:
             await workflow_client.close()
-            if firebase_handle is not None:
-                await firebase_handle.dispose()
 
     application = FastAPI(
         title="RAVEN Hypothesis Validation API",
@@ -96,7 +79,6 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     # Expose core components immediately for compatibility with existing tests and tooling.
     application.state.settings = app_settings
-    application.state.firebase = firebase_handle
     application.state.workflow_client = workflow_client
     application.state.hypothesis_repository = repository
     application.state.hypothesis_service = hypothesis_service

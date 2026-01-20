@@ -56,8 +56,7 @@ async def run_plan_generation(payload: Dict) -> Dict:
 
 
 async def run_data_collection(payload: Dict) -> Dict:
-    """Collect live datasets using pipeline-configured Composio tools."""
-
+    """Delegates to the LangGraph orchestrator to run YFinance tools based on the hypothesis."""
     return _load_orchestrator_result("data_collection", payload)
 
 

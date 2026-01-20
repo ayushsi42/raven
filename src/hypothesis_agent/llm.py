@@ -96,7 +96,7 @@ class OpenAILLM(BaseLLM):
                 end=request.time_horizon.end.isoformat(),
             )
         )
-        content = self._chat(system_prompt, user_prompt, operation="generate_data_plan")
+        content = self._chat(system_prompt, user_prompt, operation="generate_data_plan", json_mode=True)
         return self._parse_list(content)
 
     def generate_analysis_plan(
@@ -115,7 +115,7 @@ class OpenAILLM(BaseLLM):
                 overview=json.dumps(data_overview, ensure_ascii=False),
             )
         )
-        content = self._chat(system_prompt, user_prompt, operation="generate_analysis_plan")
+        content = self._chat(system_prompt, user_prompt, operation="generate_analysis_plan", json_mode=True)
         return self._parse_list(content)
 
     def generate_detailed_analysis(
@@ -154,7 +154,7 @@ class OpenAILLM(BaseLLM):
                 artifacts=artifact_paths,
             )
         )
-        content = self._chat(system_prompt, user_prompt, operation="generate_report")
+        content = self._chat(system_prompt, user_prompt, operation="generate_report", json_mode=True)
         payload = self._parse_json(content)
         if not isinstance(payload, dict):
             raise LLMError("Report generation returned non-dict response")
@@ -188,7 +188,7 @@ class OpenAILLM(BaseLLM):
         user_prompt = json.dumps(user_payload, ensure_ascii=False, indent=2)
         return self._chat(system_prompt, user_prompt, operation="generate_analysis_code")
 
-    def _chat(self, system_prompt: str, user_prompt: str, *, operation: str) -> str:
+    def _chat(self, system_prompt: str, user_prompt: str, *, operation: str, json_mode: bool = False) -> str:
         kwargs = {
             "model": self.model,
             "messages": [
@@ -196,6 +196,9 @@ class OpenAILLM(BaseLLM):
                 {"role": "user", "content": user_prompt},
             ],
         }
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
         try:
@@ -245,10 +248,22 @@ class OpenAILLM(BaseLLM):
 
     @staticmethod
     def _parse_json(content: str) -> Any:
+        # Strip markdown code blocks if present
+        cleaned = content.strip()
+        if cleaned.startswith("```"):
+            # Handle ```json ... ``` or just ``` ... ```
+            lines = cleaned.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            cleaned = "\n".join(lines).strip()
+
         try:
-            return json.loads(content)
+            return json.loads(cleaned)
         except json.JSONDecodeError as exc:
-            raise LLMError("LLM response was not valid JSON") from exc
+            logger.error("Failed to parse LLM response as JSON. Content: %s", content)
+            raise LLMError(f"LLM response was not valid JSON: {str(exc)}") from exc
 
     def _parse_list(self, content: str) -> List[str]:
         parsed = self._parse_json(content)

@@ -1,4 +1,4 @@
-"""Minimal runner that mimics the pipeline's code execution loop using PythonREPL."""
+"""Minimal runner that mimics the pipeline's code execution loop using PythonSandbox."""
 from __future__ import annotations
 
 import json
@@ -9,15 +9,15 @@ import textwrap
 from pathlib import Path
 from typing import Optional, Tuple
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_PATH = REPO_ROOT / "src"
 if SRC_PATH.exists():
     sys.path.insert(0, str(SRC_PATH))
 
-from langchain_experimental.utilities import PythonREPL
 from openai import OpenAI
 
 from hypothesis_agent.config import get_settings
+from hypothesis_agent.orchestration.python_sandbox import PythonSandbox
 
 
 RESULT_PREFIX = "RESULT::"
@@ -58,11 +58,11 @@ def prepare_analysis_preamble(workflow_dir: Path) -> str:
 
 def run_generated_code(code_text: str) -> Tuple[str, str, Optional[dict], Optional[str], str]:
     cleaned_code = extract_python_code(code_text)
-    python_repl = PythonREPL()
+    sandbox = PythonSandbox()
     workflow_dir = ARTIFACT_ROOT / WORKFLOW_ID
 
     try:
-        python_repl.run(prepare_analysis_preamble(workflow_dir))
+        sandbox.run(prepare_analysis_preamble(workflow_dir))
     except Exception as exc:
         feedback = f"Failed to initialise analysis runtime: {exc}"
         return "", feedback, None, feedback, cleaned_code
@@ -73,10 +73,10 @@ def run_generated_code(code_text: str) -> Tuple[str, str, Optional[dict], Option
     result_payload: Optional[dict] = None
 
     try:
-        stdout_text = python_repl.run(cleaned_code)
+        stdout_text = sandbox.run(cleaned_code)
     except Exception as exc:
         stderr_text = str(exc)
-        feedback = stderr_text or "Python REPL execution raised an exception"
+        feedback = stderr_text or "Python sandbox execution raised an exception"
 
     result_line: Optional[str] = None
     for line in stdout_text.splitlines():
@@ -115,14 +115,15 @@ def generate_code_from_prompt(prompt: str) -> str:
     settings = get_settings()
     api_key = settings.openai_api_key or os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("OpenAI API key is not configured; set RAVEN_OPENAI_API_KEY or OPENAI_API_KEY.")
+        raise RuntimeError("OpenAI API key is not configured; set OPENAI_API_KEY.")
 
     model = settings.openai_model or "gpt-4o-mini"
     client = OpenAI(api_key=api_key)
     system_prompt = (
         "You translate natural-language analysis requests into executable Python code. "
-        "Return only Python wrapped in a code fence. The code must import json if needed and "
-        "print the final structured result using print(\"RESULT::\" + json.dumps(result, default=str))."
+        "Return only Python wrapped in a code fence. You can define multiple functions, classes, "
+        "and use any control flow you need. The code must import json if needed and "
+        'print the final structured result using print("RESULT::" + json.dumps(result, default=str)).'
     )
     user_prompt = prompt.strip()
     if not user_prompt:
@@ -144,7 +145,7 @@ def generate_code_from_prompt(prompt: str) -> str:
 
 
 def main() -> int:
-    prompt = "Write a random code that does something that has 2 functions and one function calls the other to do something."
+    prompt = "Write a Python program with two functions where one calls the other. The first function should calculate factorial and the second should use it to compute combinations (n choose k). Test with n=10, k=3."
     try:
         generated_code = generate_code_from_prompt(prompt)
     except Exception as exc:

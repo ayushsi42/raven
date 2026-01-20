@@ -11,7 +11,7 @@ import os
 from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Sequence, cast
+from typing import Any, Dict, List, Optional, Sequence, cast
 import textwrap
 
 import matplotlib
@@ -19,11 +19,9 @@ import matplotlib
 # Use a headless backend for deterministic chart generation in tests and workers.
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
-from composio import Composio
-from composio.exceptions import ApiKeyNotProvidedError
 from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
-from langchain_experimental.utilities import PythonREPL
+from hypothesis_agent.orchestration.python_sandbox import PythonSandbox
 
 from hypothesis_agent.config import AppSettings, get_settings
 from hypothesis_agent.llm import BaseLLM, LLMError, OpenAILLM
@@ -34,6 +32,7 @@ from hypothesis_agent.models.hypothesis import (
     ValidationSummary,
     WorkflowMilestone,
 )
+from hypothesis_agent.orchestration.yfinance_tools import YFinanceToolSet, ToolHandle, ToolSet
 from hypothesis_agent.orchestration.tool_catalog import ToolDefinition, load_tool_catalog
 from hypothesis_agent.storage.artifact_store import ArtifactStore
 
@@ -99,7 +98,7 @@ def get_data_format(artifact_map: Dict[str, str]) -> Dict[str, str]:
 def _summarize_payload(payload: Any, depth: int = 0) -> Any:
     if isinstance(payload, dict):
         keys = list(payload.keys())
-        summary: Dict[str, Any] = {"keys": keys[:8]}
+        summary: Dict[str, Any] = {"keys": keys[:16]}  # Show even more keys
         first_key = keys[0] if keys else None
         if first_key is not None:
             summary["sample_key"] = first_key
@@ -107,7 +106,11 @@ def _summarize_payload(payload: Any, depth: int = 0) -> Any:
         return summary
     if isinstance(payload, list):
         summary_list: Dict[str, Any] = {"type": "array", "length": len(payload)}
-        if payload:
+        if payload and isinstance(payload[0], dict):
+            # For list of records, show the keys of the first record
+            summary_list["item_keys"] = list(payload[0].keys())[:16]
+            summary_list["sample"] = _summarize_value(payload[0], depth + 1)
+        elif payload:
             summary_list["sample"] = _summarize_value(payload[0], depth + 1)
         return summary_list
     return _summarize_value(payload, depth)
@@ -150,89 +153,7 @@ class StageExecutionResult:
     summary: Optional[ValidationSummary] = None
 
 
-class ToolHandle(Protocol):
-    """Protocol describing the interface for a Composio-like tool."""
-
-    def invoke(self, payload: Dict[str, Any]) -> Any:  # pragma: no cover - interface
-        ...
-
-
-class ToolSet(Protocol):
-    """Protocol describing a minimal tool registry."""
-
-    def get_tool(self, name: str) -> ToolHandle:  # pragma: no cover - interface
-        ...
-
-
-class _ComposioTool:
-    """Execute a specific Composio tool slug."""
-
-    def __init__(self, *, client: Any, slug: str, user_id: str | None) -> None:
-        self._client = client
-        self._slug = slug
-        self._user_id = user_id
-
-    def invoke(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        kwargs: Dict[str, Any] = {
-            "slug": self._slug,
-            "arguments": payload,
-        }
-        if self._user_id:
-            kwargs["user_id"] = self._user_id
-
-        response = self._client.tools.execute(**kwargs)
-        if not response.get("successful", False):
-            error = response.get("error") or "unknown error"
-            raise RuntimeError(f"Composio tool '{self._slug}' execution failed: {error}")
-        return cast(Dict[str, Any], response.get("data", {}))
-
-
-class _LazyComposioToolSet:
-    """Lazy-initialized Composio toolset."""
-
-    def __init__(self, user_id: str | None = None) -> None:
-        self._client: Any | None = None
-        self._user_id = user_id
-
-    def _ensure_client(self) -> Any:
-        if self._client is None:
-            try:
-                settings = get_settings()
-                api_key = settings.composio_api_key or os.environ.get("COMPOSIO_API_KEY")
-                print(f"Composio User ID: {self._user_id}")
-                print(f"Composio API Key (last 4 chars): {api_key[-4:] if api_key else 'Not set'}")
-                
-                # Skip version check since we don't know the exact version
-                try:
-                    self._client = Composio(
-                        api_key=api_key,
-                        dangerously_skip_version_check=True,
-                    )
-                except TypeError:
-                    # Older SDK versions may not accept keyword arguments; fall back to positional init.
-                    self._client = Composio()
-                    if api_key:
-                        # Best-effort compatibility hook for legacy clients exposing set_api_key/authenticate helpers.
-                        for attr in ("set_api_key", "authenticate", "configure"):
-                            if hasattr(self._client, attr):
-                                method = getattr(self._client, attr)
-                                try:
-                                    method(api_key=api_key)
-                                except TypeError:
-                                    method(api_key)
-                                break
-            except Exception as exc:
-                if isinstance(exc, ApiKeyNotProvidedError):
-                    raise RuntimeError(
-                        "Composio API key must be provided via RAVEN_COMPOSIO_API_KEY to run the pipeline."
-                    ) from exc
-                raise
-        return self._client
-
-    def get_tool(self, name: str) -> "_ComposioTool":
-        """Get a Composio tool by name."""
-        return _ComposioTool(client=self._ensure_client(), slug=name, user_id=self._user_id)
-
+# ToolHandle and ToolSet protocols are imported from alpha_vantage_tools module
 
 
 
@@ -257,8 +178,7 @@ class LangGraphValidationOrchestrator:
             self.llm = OpenAILLM(api_key=self.settings.openai_api_key, model=self.settings.openai_model)
         self.artifact_store = artifact_store or ArtifactStore.from_path(self.settings.artifact_store_path)
         self.tool_catalog = tool_catalog or load_tool_catalog()
-        composio_user_id = self.settings.composio_user_id or None
-        self.toolset = toolset or _LazyComposioToolSet(user_id=composio_user_id)
+        self.toolset = toolset or YFinanceToolSet()
 
     # ------------------------------------------------------------------
     # Public API
@@ -332,6 +252,7 @@ class LangGraphValidationOrchestrator:
         return StageExecutionResult(context=context, milestone=milestone, evidence=evidence)
 
     def _run_data_collection(self, request: HypothesisRequest, context: StageContext) -> StageExecutionResult:
+        """Fetch fundamental and market data from Yahoo Finance for evaluation."""
         workflow_id = self._ensure_workflow_id(context)
         plan = context.get("plan")
         if not plan or not isinstance(plan, dict):
@@ -349,14 +270,10 @@ class LangGraphValidationOrchestrator:
                 raise RuntimeError("Plan tool definition missing slug")
             handle = self.toolset.get_tool(slug)
             response = handle.invoke(arguments)
-            payload = {
-                "slug": slug,
-                "arguments": arguments,
-                "response": response,
-                "description": tool.get("description"),
-            }
+            
+            # Save raw response for easier LLM consumption
             artifact_name = f"data_{index:02d}_{slug.lower()}"
-            path = self.artifact_store.write_json(workflow_id, artifact_name, payload)
+            path = self.artifact_store.write_json(workflow_id, artifact_name, response)
             path_resolved = path.resolve()
             path_uri = path_resolved.as_uri()
             executed.append(
@@ -382,7 +299,7 @@ class LangGraphValidationOrchestrator:
             for item in executed
         }
         context.setdefault("insights", []).append(
-            f"Executed {len(executed)} Composio tools for data collection."
+           "Data Collection Stage - Fetches fundamental and market data from Yahoo Finance (yfinance)."
         )
         self._append_workflow_log(
             context,
@@ -482,7 +399,7 @@ class LangGraphValidationOrchestrator:
         milestone = WorkflowMilestone(
             name="detailed_analysis",
             status=MilestoneStatus.COMPLETED,
-            detail="Narrative synthesis produced from hybrid analytics.",
+            detail="Analysis Stage - Detailed Narrative (LLM) using the collected Yahoo Finance data.",
         )
         evidence: List[EvidenceReference] = []
         self._maybe_add_workflow_log_evidence(context, evidence)
@@ -634,9 +551,6 @@ class LangGraphValidationOrchestrator:
                 return
             definition = catalogue[slug]
             enriched_arguments = dict(arguments)
-            composio_key = getattr(self.settings, "composio_api_key", None) or os.getenv("COMPOSIO_API_KEY")
-            if composio_key and any("apikey" in key.lower() for key in definition.inputs):
-                enriched_arguments.setdefault("apikey", composio_key)
             tools.append(
                 {
                     "slug": slug,
@@ -646,36 +560,32 @@ class LangGraphValidationOrchestrator:
                 }
             )
 
-        add_tool("ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED", {"symbol": symbol})
-        add_tool("ALPHA_VANTAGE_COMPANY_OVERVIEW", {"symbol": symbol})
-        add_tool("ALPHA_VANTAGE_NEWS_SENTIMENT", {"tickers": symbol})
+        add_tool("YFINANCE_HISTORICAL_PRICES", {"symbol": symbol, "period": "1y"})
+        add_tool("YFINANCE_COMPANY_INFO", {"symbol": symbol})
+        add_tool("YFINANCE_NEWS", {"symbol": symbol})
 
         profitability_keywords = {"margin", "cash flow", "cashflow", "operating", "profit", "free cash"}
         if any(keyword in text for keyword in profitability_keywords):
-            add_tool("ALPHA_VANTAGE_CASH_FLOW", {"symbol": symbol})
-            add_tool("ALPHA_VANTAGE_BALANCE_SHEET", {"symbol": symbol})
+            add_tool("YFINANCE_CASH_FLOW", {"symbol": symbol})
+            add_tool("YFINANCE_BALANCE_SHEET", {"symbol": symbol})
 
         if "earnings" in text or "eps" in text:
-            add_tool("ALPHA_VANTAGE_EARNINGS", {"symbol": symbol})
+            add_tool("YFINANCE_EARNINGS", {"symbol": symbol})
 
-        if "calendar" in text or "guidance" in text:
-            add_tool("ALPHA_VANTAGE_EARNINGS_CALENDAR", {"symbol": symbol})
+        if "recommendation" in text or "analyst" in text or "rating" in text:
+            add_tool("YFINANCE_RECOMMENDATIONS", {"symbol": symbol})
 
-        macro_keywords = {"macro", "gdp", "economy", "recession"}
-        if any(keyword in text for keyword in macro_keywords):
-            add_tool("ALPHA_VANTAGE_REAL_GDP", {})
-            add_tool("ALPHA_VANTAGE_SECTOR", {})
+        if "dividend" in text or "yield" in text:
+            add_tool("YFINANCE_DIVIDENDS", {"symbol": symbol})
 
-        if "currency" in text or "fx" in text or "/" in symbol:
-            pair = symbol
-            if "/" in pair:
-                base, quote = pair.split("/", 1)
-            elif len(pair) == 6:
-                base, quote = pair[:3], pair[3:]
-            else:
-                base, quote = "USD", "EUR"
-            add_tool("ALPHA_VANTAGE_CURRENCY_EXCHANGE_RATE", {"from_currency": base, "to_currency": quote})
-            add_tool("ALPHA_VANTAGE_FX_WEEKLY", {"from_symbol": base, "to_symbol": quote})
+        if "holder" in text or "institutional" in text or "insider" in text:
+            add_tool("YFINANCE_HOLDERS", {"symbol": symbol})
+
+        if "financials" in text or "income" in text or "revenue" in text:
+            add_tool("YFINANCE_FINANCIALS", {"symbol": symbol})
+
+        if "split" in text:
+            add_tool("YFINANCE_SPLITS", {"symbol": symbol})
 
         return tools
 
@@ -688,114 +598,98 @@ class LangGraphValidationOrchestrator:
         tool_slugs = {tool["slug"] for tool in selected_tools}
         plan: List[Dict[str, Any]] = []
 
-        if "ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED" in tool_slugs:
+        if "YFINANCE_HISTORICAL_PRICES" in tool_slugs:
             plan.append(
                 {
                     "name": "price_trend_analysis",
-                    "description": f"Evaluate trailing price momentum and volatility for {symbol} using monthly adjusted closes.",
-                    "source_tools": ["ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED"],
+                    "description": f"Evaluate trailing price momentum and volatility for {symbol} using historical adjusted closes.",
+                    "source_tools": ["YFINANCE_HISTORICAL_PRICES"],
                     "operations": [
                         {
                             "operation": "percent_change",
-                            "field": "5. adjusted close",
-                            "periods": 12,
-                            "label": "Trailing 12m adjusted close change",
+                            "field": "close",
+                            "periods": 252,
+                            "label": "Trailing 1y price change",
                         },
                         {
                             "operation": "volatility",
-                            "field": "5. adjusted close",
-                            "periods": 12,
-                            "label": "Annualized volatility (monthly)",
+                            "field": "close",
+                            "periods": 252,
+                            "label": "Annualized volatility",
                         },
                     ],
                 }
             )
 
-        if "ALPHA_VANTAGE_COMPANY_OVERVIEW" in tool_slugs:
+        if "YFINANCE_COMPANY_INFO" in tool_slugs:
             plan.append(
                 {
                     "name": "profitability_snapshot",
-                    "description": "Extract current profitability ratios from company overview.",
-                    "source_tools": ["ALPHA_VANTAGE_COMPANY_OVERVIEW"],
+                    "description": "Extract current profitability ratios from company info.",
+                    "source_tools": ["YFINANCE_COMPANY_INFO"],
                     "operations": [
                         {
                             "operation": "latest_value",
-                            "field": "OperatingMarginTTM",
-                            "label": "Operating margin (TTM)",
+                            "field": "operatingMargins",
+                            "label": "Operating margin",
                         },
                         {
                             "operation": "latest_value",
-                            "field": "ProfitMargin",
+                            "field": "profitMargins",
                             "label": "Net profit margin",
                         },
                     ],
                 }
             )
 
-        if "ALPHA_VANTAGE_CASH_FLOW" in tool_slugs:
+        if "YFINANCE_CASH_FLOW" in tool_slugs:
             plan.append(
                 {
                     "name": "cash_flow_trend",
                     "description": "Assess annual operating cash flow momentum.",
-                    "source_tools": ["ALPHA_VANTAGE_CASH_FLOW"],
+                    "source_tools": ["YFINANCE_CASH_FLOW"],
                     "operations": [
                         {
-                            "operation": "yoy_change",
-                            "field": "operatingCashflow",
-                            "label": "YoY change in operating cash flow",
+                            "operation": "latest_value",
+                            "field": "Operating Cash Flow",
+                            "label": "Operating cash flow (latest)",
                         }
                     ],
                 }
             )
 
-        if "ALPHA_VANTAGE_BALANCE_SHEET" in tool_slugs:
+        if "YFINANCE_BALANCE_SHEET" in tool_slugs:
             plan.append(
                 {
                     "name": "balance_sheet_health",
                     "description": "Review leverage and liquidity from latest balance sheet.",
-                    "source_tools": ["ALPHA_VANTAGE_BALANCE_SHEET"],
+                    "source_tools": ["YFINANCE_BALANCE_SHEET"],
                     "operations": [
                         {
                             "operation": "latest_value",
-                            "field": "totalAssets",
+                            "field": "Total Assets",
                             "label": "Total assets (latest)",
                         },
                         {
                             "operation": "latest_value",
-                            "field": "totalLiabilities",
+                            "field": "Total Liabilities",
                             "label": "Total liabilities (latest)",
                         },
                     ],
                 }
             )
 
-        if "ALPHA_VANTAGE_EARNINGS" in tool_slugs:
+        if "YFINANCE_NEWS" in tool_slugs:
             plan.append(
                 {
-                    "name": "earnings_consistency",
-                    "description": "Inspect earnings per share trend.",
-                    "source_tools": ["ALPHA_VANTAGE_EARNINGS"],
+                    "name": "news_summary",
+                    "description": "Review recent news headlines and publishers.",
+                    "source_tools": ["YFINANCE_NEWS"],
                     "operations": [
                         {
-                            "operation": "latest_value",
-                            "field": "reportedEPS",
-                            "label": "Most recent reported EPS",
-                        }
-                    ],
-                }
-            )
-
-        if "ALPHA_VANTAGE_NEWS_SENTIMENT" in tool_slugs:
-            plan.append(
-                {
-                    "name": "sentiment_monitor",
-                    "description": "Summarize Alpha Vantage news sentiment feed.",
-                    "source_tools": ["ALPHA_VANTAGE_NEWS_SENTIMENT"],
-                    "operations": [
-                        {
-                            "operation": "average_sentiment",
-                            "field": "overall_sentiment_score",
-                            "label": "Average sentiment",
+                            "operation": "list_titles",
+                            "field": "news",
+                            "label": "Recent news headlines",
                         }
                     ],
                 }
@@ -954,20 +848,20 @@ class LangGraphValidationOrchestrator:
         feedback: Optional[str] = None
 
         preamble = self._prepare_analysis_environment(workflow_id, artifact_map)
-        python_repl = PythonREPL()
+        sandbox = PythonSandbox()
 
         try:
-            python_repl.run(preamble)
+            sandbox.run(preamble)
         except Exception as exc:
             error_message = f"Failed to initialise analysis runtime: {exc}"
             feedback = error_message
             return "", error_message, None, feedback
 
         try:
-            stdout_text = python_repl.run(code)
+            stdout_text = sandbox.run(code)
         except Exception as exc:
             stderr_text = str(exc)
-            feedback = stderr_text or "Python REPL execution raised an exception"
+            feedback = stderr_text or "Python sandbox execution raised an exception"
 
         result_line: Optional[str] = None
         for line in stdout_text.splitlines():
@@ -1096,62 +990,180 @@ class LangGraphValidationOrchestrator:
         if not analysis_results:
             raise RuntimeError("Analysis results missing for report rendering")
 
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.colors import HexColor
+        from reportlab.lib.units import mm
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+
         buffer = io.BytesIO()
-        pdf = canvas.Canvas(buffer, pagesize=LETTER)
-        pdf.setTitle(f"RAVEN Validation Report - {workflow_id}")
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            leftMargin=20 * mm,
+            rightMargin=20 * mm,
+            topMargin=25 * mm,
+            bottomMargin=20 * mm,
+        )
 
-        pdf.setFont("Helvetica-Bold", 14)
-        pdf.drawString(72, 720, "RAVEN Hypothesis Validation Report")
-        pdf.setFont("Helvetica", 10)
-        pdf.drawString(72, 702, f"Workflow: {workflow_id}")
-        pdf.drawString(72, 688, f"Hypothesis: {request.hypothesis_text}")
+        # Define colors
+        primary_color = HexColor("#1a1a2e")
+        accent_color = HexColor("#0f3460")
+        highlight_color = HexColor("#e94560")
 
-        pdf.setFont("Helvetica-Bold", 12)
-        pdf.drawString(72, 660, "Plan Overview")
-        text_obj = pdf.beginText(72, 644)
-        text_obj.setFont("Helvetica", 10)
-        for idx, step in enumerate(plan_steps, start=1):
-            text_obj.textLine(f"{idx}. {step}")
-        pdf.drawText(text_obj)
+        # Define styles
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle(
+            name="ReportTitle",
+            parent=styles["Heading1"],
+            fontSize=24,
+            textColor=primary_color,
+            spaceAfter=6,
+            alignment=TA_CENTER,
+        ))
+        styles.add(ParagraphStyle(
+            name="ReportSubtitle",
+            parent=styles["Normal"],
+            fontSize=10,
+            textColor=accent_color,
+            alignment=TA_CENTER,
+            spaceAfter=20,
+        ))
+        styles.add(ParagraphStyle(
+            name="SectionHeading",
+            parent=styles["Heading2"],
+            fontSize=14,
+            textColor=primary_color,
+            spaceBefore=16,
+            spaceAfter=8,
+            borderPadding=(0, 0, 4, 0),
+        ))
+        styles.add(ParagraphStyle(
+            name="RavenBody",
+            parent=styles["Normal"],
+            fontSize=10,
+            leading=14,
+            alignment=TA_JUSTIFY,
+            spaceAfter=6,
+        ))
+        styles.add(ParagraphStyle(
+            name="BulletItem",
+            parent=styles["Normal"],
+            fontSize=10,
+            leading=13,
+            leftIndent=12,
+            spaceAfter=3,
+        ))
+        styles.add(ParagraphStyle(
+            name="MetricLabel",
+            parent=styles["Normal"],
+            fontSize=9,
+            textColor=accent_color,
+        ))
+        styles.add(ParagraphStyle(
+            name="MetricValue",
+            parent=styles["Normal"],
+            fontSize=12,
+            textColor=primary_color,
+        ))
 
-        pdf.setFont("Helvetica-Bold", 12)
-        pdf.drawString(72, 612, "Key Metrics")
-        text_obj = pdf.beginText(72, 596)
-        text_obj.setFont("Helvetica", 10)
-        metrics_json = json.dumps(analysis_results, indent=2)
-        for line in metrics_json.splitlines():
-            text_obj.textLine(line)
-        pdf.drawText(text_obj)
+        story = []
 
-        pdf.setFont("Helvetica-Bold", 12)
-        pdf.drawString(72, 468, "Narrative Summary")
-        text_obj = pdf.beginText(72, 452)
-        text_obj.setFont("Helvetica", 10)
-        narrative = str(detailed_analysis["narrative"])
-        for line in narrative.splitlines():
-            text_obj.textLine(line)
-        pdf.drawText(text_obj)
+        # --- Header ---
+        story.append(Paragraph("RAVEN", styles["ReportTitle"]))
+        story.append(Paragraph("Hypothesis Validation Report", styles["ReportSubtitle"]))
+        story.append(Spacer(1, 10))
 
-        pdf.setFont("Helvetica-Bold", 12)
-        pdf.drawString(72, 360, "LLM Report Highlights")
-        text_obj = pdf.beginText(72, 344)
-        text_obj.setFont("Helvetica", 10)
-        for key in ("executive_summary", "key_findings", "risks", "next_steps"):
-            value = report_payload.get(key)
-            if value is None:
-                continue
-            heading = key.replace("_", " ").title()
-            text_obj.textLine(f"{heading}:")
-            if isinstance(value, list):
-                for item in value:
-                    text_obj.textLine(f"  - {item}")
-            else:
-                text_obj.textLine(f"  {value}")
-            text_obj.textLine("")
-        pdf.drawText(text_obj)
+        # --- Hypothesis Info Card ---
+        hypothesis_text = request.hypothesis_text or "(No hypothesis text)"
+        info_data = [
+            [Paragraph("<b>Hypothesis:</b>", styles["RavenBody"]), Paragraph(hypothesis_text, styles["RavenBody"])],
+            [Paragraph("<b>Workflow ID:</b>", styles["RavenBody"]), Paragraph(workflow_id, styles["RavenBody"])],
+            [Paragraph("<b>Entities:</b>", styles["RavenBody"]), Paragraph(", ".join(request.entities) or "N/A", styles["RavenBody"])],
+        ]
+        info_table = Table(info_data, colWidths=[80, 400])
+        info_table.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(info_table)
+        story.append(Spacer(1, 16))
 
-        pdf.showPage()
-        pdf.save()
+        # --- Key Metrics Summary Card ---
+        aggregated = analysis_results.get("aggregated", {})
+        if aggregated:
+            story.append(Paragraph("Key Metrics at a Glance", styles["SectionHeading"]))
+            metric_items = []
+            for key, value in list(aggregated.items())[:6]:  # Show top 6 metrics
+                display_key = key.replace("_", " ").title()
+                if isinstance(value, float):
+                    display_value = f"{value:.4f}" if abs(value) < 1 else f"{value:,.2f}"
+                else:
+                    display_value = str(value) if value is not None else "N/A"
+                metric_items.append([
+                    Paragraph(display_key, styles["MetricLabel"]),
+                    Paragraph(display_value, styles["MetricValue"]),
+                ])
+            if metric_items:
+                metrics_table = Table(metric_items, colWidths=[200, 280])
+                metrics_table.setStyle(TableStyle([
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("LINEBELOW", (0, 0), (-1, -2), 0.5, HexColor("#e0e0e0")),
+                ]))
+                story.append(metrics_table)
+            story.append(Spacer(1, 12))
+
+        # --- Executive Summary ---
+        exec_summary = report_payload.get("executive_summary")
+        if exec_summary:
+            story.append(Paragraph("Executive Summary", styles["SectionHeading"]))
+            story.append(Paragraph(str(exec_summary), styles["RavenBody"]))
+
+        # --- Key Findings ---
+        key_findings = report_payload.get("key_findings", [])
+        if key_findings:
+            story.append(Paragraph("Key Findings", styles["SectionHeading"]))
+            for finding in key_findings:
+                story.append(Paragraph(f"• {finding}", styles["BulletItem"]))
+
+        # --- Risks ---
+        risks = report_payload.get("risks", [])
+        if risks:
+            story.append(Paragraph("Risks", styles["SectionHeading"]))
+            for risk in risks:
+                story.append(Paragraph(f"• {risk}", styles["BulletItem"]))
+
+        # --- Next Steps ---
+        next_steps = report_payload.get("next_steps", [])
+        if next_steps:
+            story.append(Paragraph("Next Steps", styles["SectionHeading"]))
+            for step in next_steps:
+                story.append(Paragraph(f"• {step}", styles["BulletItem"]))
+
+        # --- Narrative Summary ---
+        narrative = str(detailed_analysis.get("narrative", ""))
+        if narrative:
+            story.append(Paragraph("Detailed Narrative", styles["SectionHeading"]))
+            story.append(Paragraph(narrative, styles["RavenBody"]))
+
+        # --- Plan Overview ---
+        if plan_steps:
+            story.append(Paragraph("Validation Plan Overview", styles["SectionHeading"]))
+            for idx, step in enumerate(plan_steps[:8], start=1):  # Limit to 8 steps for readability
+                # Truncate long steps
+                display_step = step if len(step) < 100 else step[:97] + "..."
+                story.append(Paragraph(f"{idx}. {display_step}", styles["BulletItem"]))
+
+        # --- Footer ---
+        story.append(Spacer(1, 30))
+        story.append(Paragraph(
+            f"<i>Generated by RAVEN • {datetime.now().strftime('%Y-%m-%d %H:%M')}</i>",
+            ParagraphStyle(name="Footer", parent=styles["Normal"], fontSize=8, textColor=accent_color, alignment=TA_CENTER),
+        ))
+
+        doc.build(story)
         pdf_bytes = buffer.getvalue()
         buffer.close()
         pdf_path = self.artifact_store.write_bytes(workflow_id, "validation_report.pdf", pdf_bytes).resolve().as_uri()
@@ -1186,7 +1198,7 @@ class LangGraphValidationOrchestrator:
         if not executed:
             return "No data fetch tools executed."
         slugs = ", ".join(item["slug"] for item in executed if item.get("slug"))
-        return f"Composio data ingested from: {slugs}."
+        return f"Alpha Vantage data ingested from: {slugs}."
 
     def _format_analysis_detail(self, results: List[Dict[str, Any]]) -> str:
         if not results:

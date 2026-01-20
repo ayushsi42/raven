@@ -1,4 +1,4 @@
-"""Unit tests for Temporal workflow activities."""
+"""Unit tests for workflow activities."""
 from __future__ import annotations
 
 import copy
@@ -84,36 +84,41 @@ class _StubLLM(BaseLLM):
 
 
 STUB_TOOL_RESPONSES: Dict[str, Dict[str, Any]] = {
-    "ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED": {
-        "Monthly Adjusted Time Series": {
-            "2024-01-31": {"5. adjusted close": "100.0"},
-            "2024-02-29": {"5. adjusted close": "102.0"},
-            "2024-03-31": {"5. adjusted close": "104.5"},
-            "2024-04-30": {"5. adjusted close": "106.0"},
-            "2024-05-31": {"5. adjusted close": "108.5"},
-            "2024-06-30": {"5. adjusted close": "112.0"},
+    "YFINANCE_HISTORICAL_PRICES": {
+        "symbol": "AAPL",
+        "period": "1y",
+        "interval": "1d",
+        "data": {
+            "2024-01-31": {"close": 100.0},
+            "2024-02-29": {"close": 102.0},
+            "2024-03-31": {"close": 104.5},
+            "2024-04-30": {"close": 106.0},
+            "2024-05-31": {"close": 108.5},
+            "2024-06-30": {"close": 112.0},
         }
     },
-    "ALPHA_VANTAGE_COMPANY_OVERVIEW": {
-        "OperatingMarginTTM": "0.21",
-        "ProfitMargin": "0.15",
+    "YFINANCE_COMPANY_INFO": {
+        "symbol": "AAPL",
+        "operatingMargins": 0.21,
+        "profitMargins": 0.15,
     },
-    "ALPHA_VANTAGE_NEWS_SENTIMENT": {
-        "feed": [
-            {"overall_sentiment_score": 0.3},
-            {"overall_sentiment_score": 0.1},
+    "YFINANCE_NEWS": {
+        "symbol": "AAPL",
+        "news": [
+            {"title": "Positive News", "publisher": "Reuters", "providerPublishTime": 1700000000},
         ]
     },
-    "ALPHA_VANTAGE_CASH_FLOW": {
-        "annualReports": [
-            {"operatingCashflow": "1200000"},
-            {"operatingCashflow": "900000"},
-        ]
+    "YFINANCE_CASH_FLOW": {
+        "symbol": "AAPL",
+        "cash_flow": {
+            "2023-12-31": {"Operating Cash Flow": 1200000.0},
+        }
     },
-    "ALPHA_VANTAGE_BALANCE_SHEET": {
-        "annualReports": [
-            {"totalAssets": "5000000", "totalLiabilities": "2100000"},
-        ]
+    "YFINANCE_BALANCE_SHEET": {
+        "symbol": "AAPL",
+        "balance_sheet": {
+            "2023-12-31": {"Total Assets": 5000000.0, "Total Liabilities": 2100000.0},
+        }
     },
 }
 
@@ -214,8 +219,9 @@ async def test_pipeline_stages_execute(stub_orchestrator) -> None:
 
     pdf_path = Path(context["report"]["pdf_path"].replace("file://", ""))
     assert pdf_path.exists()
-    fetch_slugs = {call["slug"] for call in toolset.invocations if call["slug"].startswith("ALPHA_VANTAGE")}
-    assert "ALPHA_VANTAGE_TIME_SERIES_MONTHLY_ADJUSTED" in fetch_slugs
+    fetch_slugs = {call["slug"] for call in toolset.invocations if call["slug"].startswith("YFINANCE")}
+    assert "YFINANCE_HISTORICAL_PRICES" in fetch_slugs
+    assert "YFINANCE_COMPANY_INFO" in fetch_slugs
     assert summary["score"] >= 0.0
     assert summary["confidence"] >= 0.0
     assert milestones[-1]["name"] == "delivery"
