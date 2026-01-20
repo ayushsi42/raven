@@ -153,8 +153,7 @@ class StageExecutionResult:
     summary: Optional[ValidationSummary] = None
 
 
-# ToolHandle and ToolSet protocols are imported from alpha_vantage_tools module
-
+# ToolHandle and ToolSet protocols are imported from yfinance_tools module
 
 
 class LangGraphValidationOrchestrator:
@@ -695,38 +694,6 @@ class LangGraphValidationOrchestrator:
                 }
             )
 
-        if "ALPHA_VANTAGE_CURRENCY_EXCHANGE_RATE" in tool_slugs:
-            plan.append(
-                {
-                    "name": "fx_spot_snapshot",
-                    "description": "Capture real-time FX rate for exposure analysis.",
-                    "source_tools": ["ALPHA_VANTAGE_CURRENCY_EXCHANGE_RATE"],
-                    "operations": [
-                        {
-                            "operation": "latest_rate",
-                            "field": "5. Exchange Rate",
-                            "label": "Spot exchange rate",
-                        }
-                    ],
-                }
-            )
-
-        if "ALPHA_VANTAGE_REAL_GDP" in tool_slugs:
-            plan.append(
-                {
-                    "name": "macro_context",
-                    "description": "Use real GDP series for macro backdrop.",
-                    "source_tools": ["ALPHA_VANTAGE_REAL_GDP"],
-                    "operations": [
-                        {
-                            "operation": "latest_value",
-                            "field": "value",
-                            "label": "Latest GDP reading",
-                        }
-                    ],
-                }
-            )
-
         return plan
 
     # ------------------------------------------------------------------
@@ -1148,13 +1115,7 @@ class LangGraphValidationOrchestrator:
             story.append(Paragraph("Detailed Narrative", styles["SectionHeading"]))
             story.append(Paragraph(narrative, styles["RavenBody"]))
 
-        # --- Plan Overview ---
-        if plan_steps:
-            story.append(Paragraph("Validation Plan Overview", styles["SectionHeading"]))
-            for idx, step in enumerate(plan_steps[:8], start=1):  # Limit to 8 steps for readability
-                # Truncate long steps
-                display_step = step if len(step) < 100 else step[:97] + "..."
-                story.append(Paragraph(f"{idx}. {display_step}", styles["BulletItem"]))
+
 
         # --- Footer ---
         story.append(Spacer(1, 30))
@@ -1198,7 +1159,7 @@ class LangGraphValidationOrchestrator:
         if not executed:
             return "No data fetch tools executed."
         slugs = ", ".join(item["slug"] for item in executed if item.get("slug"))
-        return f"Alpha Vantage data ingested from: {slugs}."
+        return f"Yahoo Finance data ingested from: {slugs}."
 
     def _format_analysis_detail(self, results: List[Dict[str, Any]]) -> str:
         if not results:
