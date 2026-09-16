@@ -21,9 +21,9 @@ async def get_landing_page(request: Request):
     """Render the application landing page."""
     settings = get_settings()
     return templates.TemplateResponse(
+        request,
         "landing.html",
         {
-            "request": request,
             "api_prefix": settings.api_prefix,
         },
     )

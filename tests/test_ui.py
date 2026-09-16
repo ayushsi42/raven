@@ -8,7 +8,7 @@ from tests.test_hypothesis_endpoint import test_app  # noqa: F401
 
 
 @pytest.mark.asyncio
-async def test_landing_page_served(test_app) -> None:
+async def test_landing_page_served(test_app) -> None:  # noqa: F811 - reused fixture, see import above
     """The UI endpoint should respond with the branded landing page."""
 
     transport = ASGITransport(app=test_app)

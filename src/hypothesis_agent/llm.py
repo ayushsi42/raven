@@ -9,10 +9,11 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from openai import BadRequestError, OpenAI
-logger = logging.getLogger(__name__)
 
 from hypothesis_agent.models.hypothesis import HypothesisRequest
 from hypothesis_agent.metrics import LLMTelemetry, PIPELINE_TELEMETRY
+
+logger = logging.getLogger(__name__)
 
 
 class LLMError(RuntimeError):

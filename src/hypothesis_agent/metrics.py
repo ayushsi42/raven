@@ -4,7 +4,7 @@ from __future__ import annotations
 import contextvars
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from threading import Lock
 from typing import Any, Dict, Iterator, Optional
 
