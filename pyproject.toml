@@ -48,3 +48,6 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: exercises real external services (e.g. Yahoo Finance over the network); skipped by default, set RUN_INTEGRATION_TESTS=1 to run.",
+]
