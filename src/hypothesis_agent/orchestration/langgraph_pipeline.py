@@ -1,14 +1,24 @@
-"""LangGraph orchestration for the RAVEN validation pipeline."""
+"""Sequential stage orchestration for the RAVEN validation pipeline.
+
+Despite the module/import path (`langgraph_pipeline`) and the
+`langgraph` dependency declared in `pyproject.toml`, the orchestrator
+defined here does not build or run a LangGraph `StateGraph`
+(`add_node`/`add_edge`/compiled graph invocation). It is a plain
+`if/elif` stage dispatcher: each stage is a private `_run_<stage>`
+method, and `run_stage()` picks one by name and executes it
+synchronously against a plain `dict` context that is threaded from
+caller to caller. Callers (`HypothesisWorkflowClient`,
+`workflows/activities/validation.py`) invoke stages one at a time,
+persisting the returned context between calls; there is no compiled
+graph, no automatic edge-following, and no LangGraph runtime involved
+at any point. See `SequentialValidationOrchestrator` below.
+"""
 from __future__ import annotations
 
 import io
 import json
-import math
 import re
-import statistics
-import traceback
-import os
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, cast
@@ -19,9 +29,11 @@ import matplotlib
 # Use a headless backend for deterministic chart generation in tests and workers.
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
-from reportlab.lib.pagesizes import LETTER
-from reportlab.pdfgen import canvas
-from hypothesis_agent.orchestration.python_sandbox import PythonSandbox
+from hypothesis_agent.orchestration.python_sandbox import (
+    DEFAULT_ALLOWED_IMPORT_MODULES,
+    PythonSandbox,
+    make_guarded_import,
+)
 
 from hypothesis_agent.config import AppSettings, get_settings
 from hypothesis_agent.llm import BaseLLM, LLMError, OpenAILLM
@@ -32,7 +44,7 @@ from hypothesis_agent.models.hypothesis import (
     ValidationSummary,
     WorkflowMilestone,
 )
-from hypothesis_agent.orchestration.yfinance_tools import YFinanceToolSet, ToolHandle, ToolSet
+from hypothesis_agent.orchestration.yfinance_tools import YFinanceToolSet, ToolSet
 from hypothesis_agent.orchestration.tool_catalog import ToolDefinition, load_tool_catalog
 from hypothesis_agent.storage.artifact_store import ArtifactStore
 
@@ -42,36 +54,63 @@ StageContext = Dict[str, Any]
 RESULT_PREFIX = "RESULT::"
 MAX_REPL_ATTEMPTS = 5
 STDOUT_CHARACTER_LIMIT = 1600
+
+# Builtins allowlist for the sandboxed LLM-code-execution step in
+# `_run_analysis_code`. This is deliberately NOT the real interpreter
+# `__builtins__` (see `python_sandbox.py` for the full security
+# rationale): `open`, `eval`, `exec`, and `compile` are all absent on
+# purpose so generated code cannot touch the filesystem or the
+# interpreter directly. `__import__` is present but guarded to a fixed
+# allowlist of analysis modules (json/math/statistics/pandas/etc.) —
+# `import os`, `import socket`, `import subprocess` still raise
+# ImportError. It is passed into `PythonSandbox` via `allowed_builtins`
+# (previously this allowlist was defined but never actually plumbed
+# into the sandbox's exec() call).
 SAFE_BUILTINS = {
+    "__import__": make_guarded_import(DEFAULT_ALLOWED_IMPORT_MODULES),
     "abs": abs,
-    "min": min,
-    "max": max,
-    "sum": sum,
-    "len": len,
-    "range": range,
-    "enumerate": enumerate,
-    "zip": zip,
-    "map": map,
-    "filter": filter,
-    "sorted": sorted,
-    "print": print,
-    "list": list,
-    "dict": dict,
-    "set": set,
-    "tuple": tuple,
-    "float": float,
-    "int": int,
-    "str": str,
-    "bool": bool,
-    "any": any,
     "all": all,
+    "any": any,
+    "bool": bool,
+    "dict": dict,
+    "divmod": divmod,
+    "enumerate": enumerate,
+    "filter": filter,
+    "float": float,
+    "frozenset": frozenset,
+    "getattr": getattr,
+    "hasattr": hasattr,
+    "int": int,
+    "isinstance": isinstance,
+    "issubclass": issubclass,
+    "len": len,
+    "list": list,
+    "map": map,
+    "max": max,
+    "min": min,
+    "pow": pow,
+    "print": print,
+    "range": range,
+    "repr": repr,
+    "reversed": reversed,
     "round": round,
-    "open": open,
+    "set": set,
+    "setattr": setattr,
+    "sorted": sorted,
+    "str": str,
+    "sum": sum,
+    "tuple": tuple,
+    "zip": zip,
     "Exception": Exception,
     "ValueError": ValueError,
     "TypeError": TypeError,
     "KeyError": KeyError,
+    "IndexError": IndexError,
+    "AttributeError": AttributeError,
     "RuntimeError": RuntimeError,
+    "StopIteration": StopIteration,
+    "ZeroDivisionError": ZeroDivisionError,
+    "NotImplementedError": NotImplementedError,
 }
 
 
@@ -156,8 +195,31 @@ class StageExecutionResult:
 # ToolHandle and ToolSet protocols are imported from yfinance_tools module
 
 
-class LangGraphValidationOrchestrator:
-    """Run the end-to-end hypothesis validation pipeline using LangGraph."""
+class SequentialValidationOrchestrator:
+    """Run the hypothesis validation pipeline as a sequence of discrete stages.
+
+    Execution model (read this before assuming this is a LangGraph
+    `StateGraph`): this class does NOT build a graph. `run_stage(stage,
+    request, context)` is a plain `if/elif` dispatcher that looks up
+    `stage` by name, runs the matching `_run_<stage>` method once, and
+    returns an updated context dict. There is no `add_node`,
+    `add_edge`, no compiled graph, and no automatic stage sequencing
+    inside this class at all.
+
+    Stage ordering and sequencing live entirely in the *callers*:
+    `HypothesisWorkflowClient` (`workflows/hypothesis_workflow.py`)
+    walks a hardcoded `_PIPELINE_STAGES` list and calls `run_stage`
+    once per stage via `asyncio.to_thread`, persisting the returned
+    context between calls (this is also what makes the human-review
+    pause/resume and cancellation checkpoints possible — they happen
+    *between* `run_stage` calls, not inside this class).
+    `workflows/activities/validation.py` does the same thing through a
+    thin "activity" function wrapper per stage.
+
+    The six stages, run in order by the caller, are: plan_generation,
+    data_collection, hybrid_analysis, detailed_analysis,
+    report_generation, delivery.
+    """
 
     def __init__(
         self,
@@ -499,7 +561,7 @@ class LangGraphValidationOrchestrator:
 
     def _append_workflow_log(self, context: StageContext, message: str) -> str:
         workflow_id = self._ensure_workflow_id(context)
-        timestamp = datetime.utcnow().isoformat(timespec="seconds")
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
         line = f"[{timestamp}] {message.rstrip()}\n"
         path = self.artifact_store.append_text(workflow_id, "workflow.log", line)
         log_uri = path.resolve().as_uri()
@@ -815,16 +877,23 @@ class LangGraphValidationOrchestrator:
         feedback: Optional[str] = None
 
         preamble = self._prepare_analysis_environment(workflow_id, artifact_map)
-        sandbox = PythonSandbox()
+        sandbox = PythonSandbox(
+            allowed_builtins=SAFE_BUILTINS,
+            timeout=self.settings.sandbox_timeout_seconds,
+        )
 
         try:
-            sandbox.run(preamble)
+            # The preamble is developer-authored (not LLM output): it needs
+            # real builtins to `import json`/`math`/`statistics`/`Path`.
+            # Only this trusted setup step gets full builtins.
+            sandbox.run_trusted(preamble)
         except Exception as exc:
             error_message = f"Failed to initialise analysis runtime: {exc}"
             feedback = error_message
             return "", error_message, None, feedback
 
         try:
+            # LLM-generated code: restricted builtins + wall-clock timeout.
             stdout_text = sandbox.run(code)
         except Exception as exc:
             stderr_text = str(exc)
@@ -962,7 +1031,7 @@ class LangGraphValidationOrchestrator:
         from reportlab.lib.units import mm
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+        from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
@@ -977,7 +1046,6 @@ class LangGraphValidationOrchestrator:
         # Define colors
         primary_color = HexColor("#1a1a2e")
         accent_color = HexColor("#0f3460")
-        highlight_color = HexColor("#e94560")
 
         # Define styles
         styles = getSampleStyleSheet()
@@ -1231,3 +1299,12 @@ class LangGraphValidationOrchestrator:
 
 def _clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
     return max(minimum, min(maximum, value))
+
+
+# Backward-compatible alias. The class was renamed from
+# `LangGraphValidationOrchestrator` to `SequentialValidationOrchestrator`
+# because it never used LangGraph's `StateGraph` — see the class
+# docstring for the actual execution model. Prefer the new name in new
+# code; this alias exists only so any other in-flight branch or
+# external caller importing the old name doesn't break.
+LangGraphValidationOrchestrator = SequentialValidationOrchestrator

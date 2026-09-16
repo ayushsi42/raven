@@ -14,10 +14,11 @@ SRC_PATH = REPO_ROOT / "src"
 if SRC_PATH.exists():
     sys.path.insert(0, str(SRC_PATH))
 
-from openai import OpenAI
+from openai import OpenAI  # noqa: E402
 
-from hypothesis_agent.config import get_settings
-from hypothesis_agent.orchestration.python_sandbox import PythonSandbox
+from hypothesis_agent.config import get_settings  # noqa: E402
+from hypothesis_agent.orchestration.langgraph_pipeline import SAFE_BUILTINS  # noqa: E402
+from hypothesis_agent.orchestration.python_sandbox import PythonSandbox  # noqa: E402
 
 
 RESULT_PREFIX = "RESULT::"
@@ -58,11 +59,12 @@ def prepare_analysis_preamble(workflow_dir: Path) -> str:
 
 def run_generated_code(code_text: str) -> Tuple[str, str, Optional[dict], Optional[str], str]:
     cleaned_code = extract_python_code(code_text)
-    sandbox = PythonSandbox()
+    sandbox = PythonSandbox(allowed_builtins=SAFE_BUILTINS)
     workflow_dir = ARTIFACT_ROOT / WORKFLOW_ID
 
     try:
-        sandbox.run(prepare_analysis_preamble(workflow_dir))
+        # Preamble is developer-authored (trusted); generated code below is not.
+        sandbox.run_trusted(prepare_analysis_preamble(workflow_dir))
     except Exception as exc:
         feedback = f"Failed to initialise analysis runtime: {exc}"
         return "", feedback, None, feedback, cleaned_code

@@ -23,6 +23,10 @@ class AppSettings(BaseSettings):
     notification_email: str | None = None
     enable_prometheus: bool = True
 
+    # Wall-clock seconds allowed for a single LLM-generated analysis
+    # snippet to run inside PythonSandbox before it is aborted.
+    sandbox_timeout_seconds: float = 15.0
+
     model_config = SettingsConfigDict(case_sensitive=False, env_file=".env", extra="ignore")
 
 
