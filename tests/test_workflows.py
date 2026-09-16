@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import json
 from datetime import date
 from pathlib import Path
 from uuid import uuid4
@@ -13,7 +12,7 @@ import pytest
 from hypothesis_agent.config import AppSettings
 from hypothesis_agent.llm import BaseLLM
 from hypothesis_agent.models.hypothesis import HypothesisRequest, MilestoneStatus, TimeHorizon
-from hypothesis_agent.orchestration.langgraph_pipeline import LangGraphValidationOrchestrator
+from hypothesis_agent.orchestration.langgraph_pipeline import SequentialValidationOrchestrator
 from hypothesis_agent.storage.artifact_store import ArtifactStore
 from hypothesis_agent.workflows.hypothesis_workflow import (
     HypothesisWorkflowClient,
@@ -156,11 +155,11 @@ def stub_orchestrator(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stub_tool
         artifact_store_path=str(tmp_path / "artifacts"),
     )
 
-    def _factory() -> LangGraphValidationOrchestrator:
+    def _factory() -> SequentialValidationOrchestrator:
         artifact_store = ArtifactStore.from_path(settings.artifact_store_path)
         stub_toolset.invocations.clear()
         stub_toolset.configure(copy.deepcopy(STUB_TOOL_RESPONSES))
-        return LangGraphValidationOrchestrator(
+        return SequentialValidationOrchestrator(
             settings=settings,
             llm=_StubLLM(),
             artifact_store=artifact_store,
@@ -168,7 +167,7 @@ def stub_orchestrator(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stub_tool
         )
 
     monkeypatch.setattr(
-        "hypothesis_agent.workflows.hypothesis_workflow.LangGraphValidationOrchestrator",
+        "hypothesis_agent.workflows.hypothesis_workflow.SequentialValidationOrchestrator",
         _factory,
     )
 
@@ -257,9 +256,9 @@ async def test_workflow_client_can_cancel_run(monkeypatch: pytest.MonkeyPatch) -
     import time
     import hypothesis_agent.workflows.hypothesis_workflow as wf_module
 
-    base_factory = wf_module.LangGraphValidationOrchestrator
+    base_factory = wf_module.SequentialValidationOrchestrator
 
-    def slow_factory() -> LangGraphValidationOrchestrator:
+    def slow_factory() -> SequentialValidationOrchestrator:
         orchestrator = base_factory()
         original_run_stage = orchestrator.run_stage
 
@@ -270,7 +269,7 @@ async def test_workflow_client_can_cancel_run(monkeypatch: pytest.MonkeyPatch) -
         orchestrator.run_stage = slow_run_stage  # type: ignore[assignment]
         return orchestrator
 
-    monkeypatch.setattr(wf_module, "LangGraphValidationOrchestrator", slow_factory)
+    monkeypatch.setattr(wf_module, "SequentialValidationOrchestrator", slow_factory)
 
     client = HypothesisWorkflowClient(
         namespace="test",

@@ -9,19 +9,19 @@ from hypothesis_agent.models.hypothesis import (
     WorkflowMilestone,
 )
 from hypothesis_agent.orchestration.langgraph_pipeline import (
-    LangGraphValidationOrchestrator,
+    SequentialValidationOrchestrator,
     StageExecutionResult,
 )
 
-_ORCHESTRATOR: LangGraphValidationOrchestrator | None = None
+_ORCHESTRATOR: SequentialValidationOrchestrator | None = None
 
 
-def get_orchestrator() -> LangGraphValidationOrchestrator:
+def get_orchestrator() -> SequentialValidationOrchestrator:
     """Return a cached orchestrator instance for activity executions."""
 
     global _ORCHESTRATOR
     if _ORCHESTRATOR is None:
-        _ORCHESTRATOR = LangGraphValidationOrchestrator()
+        _ORCHESTRATOR = SequentialValidationOrchestrator()
     return _ORCHESTRATOR
 
 

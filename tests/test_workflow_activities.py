@@ -11,7 +11,7 @@ import pytest
 from hypothesis_agent.config import AppSettings
 from hypothesis_agent.llm import BaseLLM
 from hypothesis_agent.models.hypothesis import HypothesisRequest, TimeHorizon
-from hypothesis_agent.orchestration.langgraph_pipeline import LangGraphValidationOrchestrator
+from hypothesis_agent.orchestration.langgraph_pipeline import SequentialValidationOrchestrator
 from hypothesis_agent.storage.artifact_store import ArtifactStore
 from hypothesis_agent.workflows.activities import validation
 from hypothesis_agent.workflows.activities.validation import (
@@ -146,13 +146,13 @@ class _StubToolSet:
 
 
 @pytest.fixture
-def stub_orchestrator(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Tuple[LangGraphValidationOrchestrator, _StubToolSet]:
+def stub_orchestrator(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Tuple[SequentialValidationOrchestrator, _StubToolSet]:
     settings = AppSettings(
         artifact_store_path=str(tmp_path / "artifacts"),
     )
     artifact_store = ArtifactStore.from_path(settings.artifact_store_path)
     toolset = _StubToolSet(copy.deepcopy(STUB_TOOL_RESPONSES))
-    orchestrator = LangGraphValidationOrchestrator(
+    orchestrator = SequentialValidationOrchestrator(
         settings=settings,
         llm=_StubLLM(),
         artifact_store=artifact_store,

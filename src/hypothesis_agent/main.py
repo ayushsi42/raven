@@ -13,10 +13,7 @@ from hypothesis_agent.api.ui import ui_router
 from hypothesis_agent.config import AppSettings, get_settings
 from hypothesis_agent.logging import configure_logging
 from hypothesis_agent.metrics import record_request_metrics
-from hypothesis_agent.repositories.hypothesis_repository import (
-    HypothesisRepository,
-    InMemoryHypothesisRepository,
-)
+from hypothesis_agent.repositories.hypothesis_repository import InMemoryHypothesisRepository
 from hypothesis_agent.services.hypothesis_service import HypothesisService
 from hypothesis_agent.telemetry import RequestContextMiddleware
 from hypothesis_agent.workflows.hypothesis_workflow import HypothesisWorkflowClient
@@ -40,7 +37,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     repository = InMemoryHypothesisRepository()
     
-    # Always use the LangGraph-based workflow client
+    # Local in-process workflow client (see HypothesisWorkflowClient
+    # docstring); namespace/task_queue/workflow/address below are
+    # vestigial fields from an earlier Temporal-based design and are
+    # not used to reach any external service.
     workflow_client = HypothesisWorkflowClient(
         namespace="default",
         task_queue="raven-hypothesis",

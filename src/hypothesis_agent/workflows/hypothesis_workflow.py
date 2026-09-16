@@ -1,4 +1,12 @@
-"""Local workflow runner for hypothesis validation using LangGraph."""
+"""Local in-process workflow runner for hypothesis validation.
+
+Drives the sequential stage pipeline in
+`orchestration/langgraph_pipeline.py` (see that module's docstring for
+why it isn't actually LangGraph-based) via a hardcoded stage list and
+plain `asyncio` tasks/threads. There is no distributed workflow engine
+involved here despite the historical Temporal-shaped naming elsewhere
+in this package.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +23,7 @@ from hypothesis_agent.models.hypothesis import (
     WorkflowMilestone,
 )
 from hypothesis_agent.orchestration.langgraph_pipeline import (
-    LangGraphValidationOrchestrator,
+    SequentialValidationOrchestrator,
     StageExecutionResult,
 )
 
@@ -66,7 +74,12 @@ class LocalWorkflowRun:
 
 @dataclass(slots=True)
 class HypothesisWorkflowClient:
-    """Execute the LangGraph pipeline for hypothesis validation."""
+    """Drive the sequential stage pipeline (see module docstring) for hypothesis validation.
+
+    `namespace`/`task_queue`/`address` are vestigial fields carried over
+    from an earlier Temporal-based design; they are unused by the local
+    execution path implemented here.
+    """
 
     namespace: str
     task_queue: str
@@ -184,7 +197,7 @@ class HypothesisWorkflowClient:
         metadata["human_review"] = {"required": True, "decision": decision}
         self._local_runs[key] = local_run
 
-        orchestrator = LangGraphValidationOrchestrator()
+        orchestrator = SequentialValidationOrchestrator()
         self._mark_stage_running(key, "delivery")
         await asyncio.sleep(0)
         try:
@@ -325,7 +338,7 @@ class HypothesisWorkflowClient:
         hypothesis: HypothesisRequest,
     ) -> None:
         key = (workflow_id, workflow_run_id)
-        orchestrator = LangGraphValidationOrchestrator()
+        orchestrator = SequentialValidationOrchestrator()
 
         local_run = self._local_runs.get(key)
         if local_run is None:
@@ -371,7 +384,7 @@ class HypothesisWorkflowClient:
     async def _run_single_stage(
         self,
         key: Tuple[str, str],
-        orchestrator: LangGraphValidationOrchestrator,
+        orchestrator: SequentialValidationOrchestrator,
         stage: str,
         hypothesis: HypothesisRequest,
         context: Dict[str, Any],
